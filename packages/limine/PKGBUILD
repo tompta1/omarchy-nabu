@@ -1,0 +1,21 @@
+# Package outputs from scripts/build-limine.sh; one ARM64 UEFI release only.
+pkgname=limine
+pkgver=12.10.0
+pkgrel=1
+pkgdesc='Limine ARM64 UEFI loader and native maintenance utility for Nabu'
+arch=('aarch64')
+url='https://github.com/Limine-Bootloader/Limine'
+license=('BSD-2-Clause')
+options=('!strip' '!debug')
+
+package() {
+  local input=${NABU_LIMINE_INPUT:?Supply the verified build-limine.sh output}
+  (cd "$input" && sha256sum -c SHA256SUMS)
+  [[ $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$input/profile.json") == "$pkgver" ]]
+  # Never package the build machine's x86 CLI as an ARM runtime executable.
+  readelf -h "$input/limine-aarch64" | grep -q 'Machine:.*AArch64'
+  install -Dm755 "$input/limine-aarch64" "$pkgdir/usr/bin/limine"
+  install -Dm644 "$input/BOOTAA64.EFI" "$pkgdir/usr/share/limine/BOOTAA64.EFI"
+  install -Dm644 "$input/COPYING" "$pkgdir/usr/share/licenses/limine/COPYING"
+  install -Dm644 "$input/3RDPARTY.md" "$pkgdir/usr/share/licenses/limine/3RDPARTY.md"
+}

@@ -1,0 +1,20 @@
+{
+  "root_partition": "userdata",
+  "root_partition_bytes": 114713931776,
+  "root_filesystem_uuid": "REPLACE_WITH_MEASURED_UUID",
+  "boot_partition": "cust",
+  "boot_partition_bytes": 1073741824,
+  "boot_filesystem_uuid": "REPLACE_WITH_MEASURED_UUID",
+  "esp_partition": "rawdump",
+  "esp_partition_bytes": 134217728,
+  "esp_filesystem_uuid": "REPLACE_WITH_MEASURED_UUID",
+  "existing_firmware": "U-Boot 2025.04-rc5",
+  "existing_loader": "GRUB 2.12",
+  "preserve_partitions": [
+    "rawdump",
+    "boot_a",
+    "boot_b",
+    "persist",
+    "persistbak"
+  ]
+}

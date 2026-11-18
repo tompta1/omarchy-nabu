@@ -1,0 +1,56 @@
+{
+  "repository": "https://github.com/Kumar-Jy/linux.git",
+  "branch": "nabu/7.3.y",
+  "commit": "72ec20d0e5c3566790ec809749a4ce642439d37c",
+  "defconfig": "nabu_defconfig",
+  "kernel_version": "7.3.4",
+  "source_directory": "upstream/linux-nabu-iris-resume",
+  "prepared_tree": "0931c95c3a92783dae4b42c546306aa0a975863f",
+  "stable_patch": {
+    "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/incr/patch-7.3.3-4.xz",
+    "sha256": "28df51493ae01b36c575a1aa257ac4a6896054af772d180fbf73a98e6190dbc6",
+    "exclude": [
+      "drivers/media/i2c/ov8856.c",
+      "drivers/media/platform/qcom/camss/camss-vfe-17x.c",
+      "drivers/media/platform/qcom/camss/camss.c",
+      "drivers/media/platform/qcom/iris/iris_core.h",
+      "drivers/media/platform/qcom/iris/iris_vpu_common.c",
+      "drivers/misc/fastrpc.c",
+      "drivers/power/supply/qcom_smbx.c",
+      "sound/soc/qcom/qdsp6/q6asm-dai.c"
+    ]
+  },
+  "resolution_patch": {
+    "path": "kernel/patches/nabu-7.3.4-resolutions.patch",
+    "sha256": "8bb56e3bc861f4a5848770cddda4df712f77c8fe26d015fe7592f39d092abc0a"
+  },
+  "review": {
+    "ov8856": "Apply upstream power/metadata changes; keep explicit Nabu xvclk acquisition/rate setup.",
+    "camss-vfe-17x": "IRQ buffer-done gate fix already present. Retain Nabu one-to-one WM allocation and output path; upstream vfe_get_output_v2 implementation is absent in this fork.",
+    "camss-resources": "Upstream changes SA8775P resources that are absent from this Nabu CAMSS fork; no resource block imported.",
+    "iris": "Add IOVA state alongside Nabu LLCC state, fix clock/domain power-off order, and retain legacy-VPU5 guard before bridge reset writes.",
+    "fastrpc": "Apply reserved-heap lifetime and error-cleanup fixes while retaining physical-address reporting and Nabu SNS/PDR attach helpers.",
+    "charger": "qcom_smbx.c is absent; Nabu retains its own SMB5/BMS driver. No new charging calibration or driver replacement.",
+    "q6asm": "Upstream fixes period-index wrap/underflow; Nabu already wraps a byte IRQ position and converts to frames. Retain that implementation.",
+    "iris-pm": "Use legacy non-TZ WFI/PC_READY handshake, secure suspend/resume, and restore clock-gating/interrupt/queue-table registers without a second Linux IRQ enable. Retain firmware, shared queues, sessions and LLCC ownership. Runtime PM remains forbidden for VPU5; system-PM clock/domain ordering and active-stream recovery need physical validation."
+  },
+  "promotion": "FAILED experimental HW-08 candidate: firmware resume timed out (-ETIME), decoder reopen exposed an IRQ imbalance. Test selector retired; do not promote. See hardware status. Working debug2 and stock are retained.",
+  "build": {
+    "output": "out/kernel-7.3.4-iris-resume",
+    "work_volume": "omarchy-nabu-kernel-7.3.4-iris-resume-clean-work"
+  },
+  "debug_fragment": {
+    "path": "kernel/debug-iris-resume.config",
+    "sha256": "a72a778c24ff2cf9f5c37a25c510571f46717e98ad0a755cac1b27fa28f48034"
+  },
+  "patches": [
+    {
+      "path": "kernel/patches/iris-vpu5-pm-trace.patch",
+      "sha256": "34b0fcd4b038e9db794c91a6d1e184bd58a012be1ce4089507f6062bac97eeae"
+    },
+    {
+      "path": "kernel/patches/iris-vpu5-retained-pm.patch",
+      "sha256": "79557ddb9eec61baa4d2fd38f5a11dddd242c14383d39928f15cfbdbe2274336"
+    }
+  ]
+}

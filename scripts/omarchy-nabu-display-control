@@ -1,0 +1,97 @@
+#!/usr/bin/python3
+"""User-session control of Nabu display automation; no privileged operations."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import socket
+import subprocess
+import tempfile
+
+CONFIG = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home()/'.config')))/'omarchy-nabu/tablet-controls.json'
+
+
+def settings():
+    try:
+        return json.loads(CONFIG.read_text())
+    except FileNotFoundError:
+        return {'auto_rotate': True}
+
+
+def save_settings(value):
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=CONFIG.parent, delete=False) as file:
+        temporary = Path(file.name)
+        try:
+            json.dump(value, file)
+            file.write('\n')
+            file.flush()
+            os.fsync(file.fileno())
+            os.replace(temporary, CONFIG)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def brightness(command='status'):
+    path = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}'))/'nabu-autobrightness.sock'
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(2)
+        client.connect(str(path))
+        client.sendall(json.dumps({'command': command}).encode()+b'\n')
+        return json.loads(client.recv(8192))
+
+
+def status():
+    try:
+        light = brightness()
+    except (OSError, ValueError):
+        light = {'enabled': False}
+    rotation_running = subprocess.run(
+        ['systemctl', '--user', 'is-active', '--quiet', 'omarchy-nabu-autorotate.service'],
+        timeout=3, check=False).returncode == 0
+    return {'auto_brightness': bool(light.get('enabled', False)),
+            'brightness_available': bool(light.get('success', False)),
+            'auto_rotate': bool(settings().get('auto_rotate', True)) and rotation_running,
+            'rotation_available': rotation_running}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['status', 'toggle-brightness', 'toggle-rotation', 'manual-brightness'])
+    parser.add_argument('--no-osd', action='store_true')
+    parser.add_argument('--monitor')
+    parser.add_argument('percent', nargs='?')
+    # The slider supplies the action, options, then the percentage. Older
+    # argparse versions need intermixed parsing for the trailing optional
+    # positional; ordinary parse_args rejects this supported invocation.
+    args = parser.parse_intermixed_args()
+    if args.action == 'toggle-brightness':
+        result = brightness('toggle')
+        if not result.get('success'):
+            raise RuntimeError('Auto-brightness toggle failed')
+    elif args.action == 'toggle-rotation':
+        config = settings()
+        config['auto_rotate'] = not config.get('auto_rotate', True)
+        save_settings(config)
+    elif args.action == 'manual-brightness':
+        if not args.monitor or not re.fullmatch(r'[A-Za-z0-9._-]+', args.monitor):
+            raise ValueError('A monitor name is required')
+        if not args.percent or not re.fullmatch(r'(?:100|[1-9][0-9]?)%', args.percent):
+            raise ValueError('Brightness must be 1% through 100%')
+        # Let the user's slider win over ambient adjustments.
+        try:
+            brightness('disable')
+        except OSError:
+            pass
+        subprocess.run(['omarchy-brightness-display', '--no-osd', '--monitor', args.monitor, args.percent],
+                       check=True, timeout=10)
+    print(json.dumps(status()))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        print(json.dumps({'error': str(error)}))
+        raise SystemExit(1)

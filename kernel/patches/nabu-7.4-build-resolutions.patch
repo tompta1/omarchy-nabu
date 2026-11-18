@@ -1,0 +1,62 @@
+Subject: [OS-12] Resolve Nabu rc3 build conflicts without replacing board drivers
+
+GPL-2.0-only, retaining upstream file notices.
+Q6ASM lacks upstream hw_ptr/queue_ptr; retain dsp_buf reset and existing
+pcm_irq_pos reset. Keep the board PNFS retry case instead of its duplicate.
+Remove an inherited OV13B10 assignment to a nonexistent field and redundant
+allocation check; device access already uses the I2C client/subdev.
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index f061e1ea0..332424a79 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -1548,10 +1548,6 @@ static int ov13b10_probe(struct i2c_client *client)
+ 	if (!ov13b)
+ 		return -ENOMEM;
+ 
+-	ov13b->dev = &client->dev;
+-	if (!ov13b)
+-		return -ENOMEM;
+-
+ 	/* Initialize subdev */
+ 	v4l2_i2c_subdev_init(&ov13b->sd, client, &ov13b10_subdev_ops);
+ 
+diff --git a/fs/nfs/pnfs.c b/fs/nfs/pnfs.c
+index b1608d9b1..14f4a4b12 100644
+--- a/fs/nfs/pnfs.c
++++ b/fs/nfs/pnfs.c
+@@ -2358,8 +2358,6 @@ pnfs_update_layout(struct inode *ino,
+ 			break;
+ 		case -ENODATA:
+ 			/* The server returned NFS4ERR_LAYOUTUNAVAILABLE */
+-		case -EMSGSIZE:
+-			/* The layout exceeded loga_maxcount (NFS4ERR_TOOSMALL) */
+ 			pnfs_layout_set_fail_bit(
+ 				lo, pnfs_iomode_to_fail_bit(iomode));
+ 			lseg = NULL;
+diff --git a/sound/soc/qcom/qdsp6/q6asm-dai.c b/sound/soc/qcom/qdsp6/q6asm-dai.c
+index eb0f7a538..a335c589d 100644
+--- a/sound/soc/qcom/qdsp6/q6asm-dai.c
++++ b/sound/soc/qcom/qdsp6/q6asm-dai.c
+@@ -297,9 +297,6 @@ static int q6asm_dai_prepare(struct snd_soc_component *component,
+ 		prtd->state = Q6ASM_STREAM_STOPPED;
+ 	}
+ 
+-	/* ALSA resets appl_ptr for every prepare, including xrun recovery. */
+-	prtd->queue_ptr = 0;
+-
+ 	ret = q6asm_map_memory_regions(substream->stream, prtd->audio_client,
+ 				       prtd->phys,
+ 				       (prtd->pcm_size / prtd->periods),
+diff --git a/sound/soc/qcom/qdsp6/q6asm.c b/sound/soc/qcom/qdsp6/q6asm.c
+index bcfd65586..46a8d56ac 100644
+--- a/sound/soc/qcom/qdsp6/q6asm.c
++++ b/sound/soc/qcom/qdsp6/q6asm.c
+@@ -523,7 +523,6 @@ int q6asm_map_memory_regions(unsigned int dir, struct audio_client *ac,
+ 
+ 	ac->port[dir].buf = buf;
+ 	ac->port[dir].dsp_buf = 0;
+-	atomic_set(&ac->port[dir].hw_ptr, 0);
+ 
+ 	buf[0].phys = phys;
+ 	buf[0].size = period_sz;

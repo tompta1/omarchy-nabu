@@ -1,0 +1,32 @@
+{
+  "nabu": {
+    "url": "https://github.com/Kumar-Jy/Nabu-arch-images.git",
+    "commit": "9db8837e8b4786cb32ca9225c4a70f24046eeecd"
+  },
+  "omarchy": {
+    "url": "https://github.com/omacom/omarchy.git",
+    "commit": "ac2690cd7be4f47e4a255f5e2e78d904d436b068"
+  },
+  "pocketblue": {
+    "url": "https://github.com/pocketblue/pocketblue.git",
+    "commit": "b2c155ba4b543089a70757bc3536d6f95ac4e0bf"
+  },
+  "pocketblue-packages": {
+    "url": "https://github.com/pocketblue/packages.git",
+    "commit": "703d672e12a20c9c51b01be9d8e9b81f6110d082"
+  },
+  "nabu-pkgs": {
+    "url": "https://github.com/Kumar-Jy/nabu-pkgs.git",
+    "commit": "a536d44db99de61b4ed7ffdead051a6fff7e5e48"
+  },
+  "uboot": {
+    "url": "https://github.com/gmankab/u-boot.git",
+    "commit": "22a9b9a0a272299c426e4f597d2e8ec1d3336a2a",
+    "scope": "bootloader"
+  },
+  "limine": {
+    "url": "https://github.com/Limine-Bootloader/Limine.git",
+    "commit": "033b59788039d5aec35ced33082f23388ab33cda",
+    "scope": "bootloader"
+  }
+}

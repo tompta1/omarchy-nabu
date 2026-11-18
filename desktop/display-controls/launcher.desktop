@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Tablet display controls
+Comment=Add optional auto-brightness and auto-rotate switches to the display panel
+Exec=omarchy-nabu-display-install
+Terminal=true
+Type=Application
+Icon=video-display
+Categories=Settings;HardwareSettings;

@@ -1,0 +1,7 @@
+# Native host-CPU filesystem assembly; never use host block/loop devices.
+FROM docker.io/library/archlinux:base
+RUN pacman -Syu --noconfirm --needed btrfs-progs python dosfstools mtools e2fsprogs libarchive util-linux \
+    && python -c 'import re,subprocess; v=subprocess.check_output(["btrfs","version"],text=True); m=re.search(r"v([0-9]+)[.]([0-9]+)",v); assert m and tuple(map(int,m.groups())) >= (7,1),v' \
+    && pacman -Scc --noconfirm
+WORKDIR /project
+ENTRYPOINT ["/bin/bash"]

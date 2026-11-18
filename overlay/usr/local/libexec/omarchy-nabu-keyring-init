@@ -1,0 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+pacman-key --init
+pacman-key --populate archlinuxarm archlinux omarchy
+install -d /var/lib/omarchy-nabu
+touch /var/lib/omarchy-nabu/keyring-ready

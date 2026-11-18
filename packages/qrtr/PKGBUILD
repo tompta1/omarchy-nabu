@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+# Match the linux-msm revision used by the reviewed Kumar-Jy QRTR recipe.
+pkgname=qrtr
+pkgver=r117.5923eea
+pkgrel=2
+pkgdesc='Qualcomm QRTR nameservice and userspace library'
+arch=('aarch64')
+url='https://github.com/linux-msm/qrtr'
+license=('BSD-3-Clause')
+depends=('glibc')
+makedepends=('meson' 'ninja' 'systemd')
+_commit=5923eea97377f4a3ed9121b358fd919e3659db7b
+source=("qrtr-$pkgver.tar.gz::https://codeload.github.com/linux-msm/qrtr/tar.gz/$_commit")
+sha256sums=('dde3f26b9745acb2eebfbae1466aac3283b6adbc558e07ee1f3033b16544bfb4')
+
+build() {
+  arch-meson "$srcdir/qrtr-$_commit" build -Dqrtr-ns=enabled -Dsystemd-service=enabled
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+  install -Dm644 "$srcdir/qrtr-$_commit/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+}

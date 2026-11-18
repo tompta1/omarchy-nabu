@@ -1,0 +1,15 @@
+[Unit]
+Description=Initialize Nabu upstream Limine and Snapper integration
+RequiresMountsFor=/boot /efi
+After=local-fs.target
+Before=limine-snapper-sync.service display-manager.service
+ConditionPathExists=!/var/lib/omarchy-nabu/snapshot-ready
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/omarchy-nabu-snapshot-init
+RemainAfterExit=yes
+TimeoutStartSec=5min
+
+[Install]
+WantedBy=multi-user.target

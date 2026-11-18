@@ -1,0 +1,12 @@
+[Unit]
+Description=Initialize this tablet's pacman keyring
+Before=sddm.service
+ConditionPathExists=!/var/lib/omarchy-nabu/keyring-ready
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/omarchy-nabu-keyring-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

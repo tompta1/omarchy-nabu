@@ -1,0 +1,90 @@
+name: Manual image build
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Test uses throwaway inputs and deletes images; device uses owner secrets
+        type: choice
+        options: [test, device]
+        default: test
+      profiles:
+        description: OS options; every selection shares one compiled kernel
+        type: choice
+        options: [vanilla, tablet-options, both]
+        default: vanilla
+      username:
+        description: Local image account
+        type: string
+        default: tablet
+      autologin:
+        description: Enable desktop autologin
+        type: boolean
+        default: true
+      kernel_jobs:
+        description: Parallel kernel jobs; zero selects up to 24
+        type: number
+        default: 0
+      upload_artifacts:
+        description: Upload device-mode results; private repositories only
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nabu-image-build
+  cancel-in-progress: false
+
+jobs:
+  images:
+    runs-on: [self-hosted, linux, x64, nabu-builder]
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: source
+    steps:
+      - name: Check out integration source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+
+      - name: Check source and pins
+        run: |
+          python3 tools/check-source.py
+          python3 scripts/nabu_sources.py --scope all > /dev/null
+
+      - name: Build kernel and verify OS images
+        env:
+          CI_TARGET: ${{ inputs.target }}
+          CI_PROFILES: ${{ inputs.profiles }}
+          CI_USERNAME: ${{ inputs.username }}
+          CI_AUTOLOGIN: ${{ inputs.autologin }}
+          CI_KERNEL_JOBS: ${{ inputs.kernel_jobs }}
+          CI_UPLOAD: ${{ inputs.upload_artifacts }}
+          CI_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          NABU_CI_LAYOUT_JSON: ${{ secrets.NABU_LAYOUT_JSON }}
+          NABU_CI_PASSWORD_HASH: ${{ secrets.NABU_PASSWORD_HASH }}
+          NABU_CI_AUTHORIZED_KEYS: ${{ secrets.NABU_AUTHORIZED_KEYS }}
+          NABU_CI_UBOOT_VARS_B64: ${{ secrets.NABU_UBOOT_VARS_B64 }}
+        run: python3 scripts/ci-images.py
+
+      - name: Upload explicitly selected private device results
+        if: inputs.upload_artifacts && inputs.target == 'device' && github.event.repository.private
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nabu-images-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/nabu-image-results/${{ github.run_id }}-${{ github.run_attempt }}/kernel/
+            ${{ runner.temp }}/nabu-image-results/${{ github.run_id }}-${{ github.run_attempt }}/*/images/
+            ${{ runner.temp }}/nabu-image-results/${{ github.run_id }}-${{ github.run_attempt }}/*/esp-component/
+            ${{ runner.temp }}/nabu-image-results/${{ github.run_id }}-${{ github.run_attempt }}/*/image-receipt.json
+            ${{ runner.temp }}/nabu-image-results/${{ github.run_id }}-${{ github.run_attempt }}/*/image-options.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 6

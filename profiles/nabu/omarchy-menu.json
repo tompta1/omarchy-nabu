@@ -1,0 +1,7 @@
+{
+  "nabu-keyboard": {
+    "icon": "",
+    "label": "On-screen keyboard",
+    "action": "omarchy-nabu-keyboard"
+  }
+}

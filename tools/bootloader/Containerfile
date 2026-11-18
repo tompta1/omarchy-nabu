@@ -1,0 +1,8 @@
+FROM localhost/omarchy-nabu-kernel-builder:ubuntu2404
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgnutls28-dev python3-pyelftools python3-setuptools swig pkg-config \
+    mkbootimg xxd lz4 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /project
+ENTRYPOINT ["/bin/bash"]

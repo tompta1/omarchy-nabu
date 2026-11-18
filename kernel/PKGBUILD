@@ -1,0 +1,57 @@
+# Locally compiled, independently installed alongside the stock Nabu kernel.
+_slot=${NABU_KERNEL_SLOT:-debug}
+case $_slot in local|debug|debug-next|debug-pm) ;; *) echo 'Unsupported Nabu kernel slot' >&2; exit 2;; esac
+pkgname=linux-nabu-$_slot
+pkgver=7.3.4
+if [[ -n ${NABU_KERNEL_INPUT:-} && -s $NABU_KERNEL_INPUT/kernelrelease ]]; then
+  read -r _release < "$NABU_KERNEL_INPUT/kernelrelease"
+  [[ $_release =~ ^([0-9]+[.][0-9]+([.][0-9]+)?(-rc[1-9][0-9]*)?)-nabu(-debug)?[0-9]+[+]?$ ]] || {
+    echo 'Unsupported compiled Nabu kernel release' >&2; exit 2;
+  }
+  pkgver=${BASH_REMATCH[1]/-rc/rc}
+fi
+pkgrel=6
+pkgdesc='Source-built Xiaomi Nabu kernel; stock fallback remains separate'
+arch=('aarch64')
+license=('GPL-2.0-only')
+depends=('kmod' 'mkinitcpio' 'systemd-ukify' 'linux-firmware-xiaomi-nabu')
+options=('!strip' '!debug')
+if [[ ${NABU_BOOT_MANAGER:-grub} == limine ]]; then
+  provides=("linux-nabu=$pkgver")
+fi
+
+package() {
+  local input=${NABU_KERNEL_INPUT:?} release image=Image kernelimage
+  release=$(cat "$input/kernelrelease")
+  if grep -qx CONFIG_EFI_ZBOOT=y "$input/config"; then
+    image=vmlinuz.efi
+  fi
+  kernelimage=/usr/lib/modules/$release/vmlinuz
+  if [[ ${NABU_BOOT_MANAGER:-grub} == grub ]]; then
+    kernelimage=/boot/vmlinux-$release
+    install -Dm644 "$input/Image.gz" "$pkgdir/boot/vmlinuz-$release"
+    install -Dm644 "$input/$image" "$pkgdir$kernelimage"
+    install -Dm644 "$input/sm8150-xiaomi-nabu.dtb" "$pkgdir/boot/dtb-$release"
+  fi
+  bsdtar --no-same-owner -xf "$input/modules.tar" -C "$pkgdir"
+  # kmod regenerates these indexes after each package transaction.
+  rm -f "$pkgdir/usr/lib/modules/$release/"modules.{alias,dep,devname,softdep,symbols,weakdep,*.bin}
+  # Standard Arch kernel discovery used by limine-mkinitcpio-hook. Keep the
+  # raw EFI payload and matching DTB with the root's versioned modules so a
+  # snapshot restores all of them together.
+  install -Dm644 "$input/$image" "$pkgdir/usr/lib/modules/$release/vmlinuz"
+  install -Dm644 "$input/sm8150-xiaomi-nabu.dtb" "$pkgdir/usr/lib/modules/$release/nabu.dtb"
+  printf '%s\n' "$pkgname" > "$pkgdir/usr/lib/modules/$release/pkgbase"
+  install -Dm644 "$input/config" "$pkgdir/usr/lib/modules/$release/config"
+  install -Dm644 /dev/stdin "$pkgdir/etc/mkinitcpio.d/$pkgname.preset" <<EOF
+ALL_kver="$release"
+PRESETS=('default')
+default_uki="${NABU_KERNEL_UKI_DIR:-/boot/efi/EFI/arch}/arch-linux-nabu-$_slot.efi"
+default_cmdline="/etc/kernel/cmdline-nabu-$_slot"
+default_options="--kernelimage $kernelimage --ukiconfig /etc/kernel/uki-nabu-$_slot.conf"
+EOF
+  install -Dm644 /dev/stdin "$pkgdir/etc/kernel/uki-nabu-$_slot.conf" <<EOF
+[UKI]
+DeviceTree=/usr/lib/modules/$release/nabu.dtb
+EOF
+}

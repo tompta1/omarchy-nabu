@@ -1,0 +1,5 @@
+FROM registry.fedoraproject.org/fedora:45
+RUN dnf -y install android-tools python3 coreutils findutils gawk \
+    && dnf clean all
+WORKDIR /project
+ENTRYPOINT ["/bin/bash"]

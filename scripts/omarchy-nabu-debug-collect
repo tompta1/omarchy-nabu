@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+(( EUID == 0 )) || { echo 'Run with sudo to collect kernel diagnostics.' >&2; exit 1; }
+work=$(mktemp -d /var/tmp/nabu-debug.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+journalctl -b -k --no-pager > "$work/kernel-journal.txt"
+journalctl -b --no-pager > "$work/boot-journal.txt"
+dmesg > "$work/dmesg.txt"
+cat /proc/cmdline > "$work/cmdline.txt"
+uname -a > "$work/uname.txt"
+lsmod > "$work/modules.txt"
+cat /proc/kallsyms > "$work/kallsyms.txt"
+journalctl -b -1 -k --no-pager > "$work/previous-kernel-journal.txt" 2>/dev/null || true
+[[ ! -r /proc/config.gz ]] || cp /proc/config.gz "$work/"
+mkdir "$work/pstore"
+cp -a /sys/fs/pstore/. "$work/pstore/" 2>/dev/null || true
+if [[ -d /var/lib/systemd/pstore ]]; then cp -a /var/lib/systemd/pstore "$work/saved-pstore"; fi
+output="/var/tmp/nabu-debug-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+tar -czf "$output" -C "$work" .
+chmod 600 "$output"
+printf '%s\n' "$output"

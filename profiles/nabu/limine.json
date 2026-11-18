@@ -1,0 +1,13 @@
+{
+  "version": "12.10.0",
+  "target": "aarch64-uefi",
+  "source_url": "https://github.com/Limine-Bootloader/Limine/releases/download/v12.10.0/limine-12.10.0.tar.xz",
+  "source_sha256": "58ccb2bf39bdbda60cbbb2a2678c42e27a4424d6190a5f370e4e060bba20116b",
+  "source_directory": "limine-12.10.0",
+  "candidate_loader": "/EFI/omarchy-nabu/limine/BOOTAA64.EFI",
+  "status": "Live normal boot verified: U-Boot -> Limine 12.10.0 -> rc3 UKI. Fresh image and Btrfs snapshot recovery remain unqualified.",
+  "default_loaders": [
+    "/EFI/fedora/shimaa64.efi",
+    "/EFI/BOOT/BOOTAA64.EFI"
+  ]
+}

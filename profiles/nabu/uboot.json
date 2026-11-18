@@ -1,0 +1,13 @@
+{
+  "source": "uboot",
+  "version": "2026.07",
+  "release_reference": "2026-10-23",
+  "make_configs": ["qcom_defconfig", "qcom-phone.config", "tauchgang.config"],
+  "device_tree": "qcom/sm8150-xiaomi-nabu",
+  "localversion": "-omarchy-nabu",
+  "android_header_version": 0,
+  "android_base": 0,
+  "android_page_size": 4096,
+  "output": "out/uboot-2026.07-nabu",
+  "work_volume": "omarchy-nabu-uboot-2026.07-work"
+}

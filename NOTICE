@@ -1,0 +1,26 @@
+Omarchy Quattro on Xiaomi Nabu
+
+Original integration code and documentation in this project are MIT-licensed.
+This does not change the licenses of upstream software, incorporated files,
+kernel modules, or firmware. Existing source-file notices take precedence for
+those files. This is an independent integration project, not an official Xiaomi,
+Omarchy, Arch Linux ARM, or Pocketblue release.
+
+Kernel-derived changes in kernel/patches retain GPL-2.0-only terms. Sensor
+patches retain their upstream GPL-3.0-or-later terms. Accepting those obligations
+does not relicense third-party firmware or require changing all independent
+integration scripts to one blanket GPL license.
+
+| Source component | Terms / retained material |
+| --- | --- |
+| Omarchy | MIT; [exact notice](licenses/omarchy-MIT.txt). Version pin in sources.json. |
+| Selected Nabu files/patches | Preserve [image-source MIT](licenses/nabu-MIT.txt) and [package-source MIT](licenses/nabu-pkgs-MIT.txt) where used. |
+| Kernel-derived patches | GPL-2.0-only with upstream per-file notices; [GPLv2](licenses/GPL-2.0-only.txt). Kernel profiles pin base, patches and resulting trees. |
+| libssc / SensorProxy changes | GPL-3.0-or-later; author/origin metadata in packages/, with [GPLv3](licenses/GPL-3.0.txt). Independent packaging glue remains MIT. |
+| wvkbd build input | GPLv3 plus [scope/copyright](licenses/wvkbd-COPYING.txt) and [Weston MIT notice](licenses/wvkbd-COPYING-WESTON.txt). Input archive is hash-pinned, not vendored. |
+| Pocketblue | Board-recipe reference, AGPL-3.0 checkout. Its build scripts were not copied into the Arch glue. Review any future incorporation separately. |
+| Limine | Separate hash-pinned release source and Git pin; BSD-2-Clause core plus bundled per-component terms in upstream `3RDPARTY.md`. Build outputs retain COPYING and 3RDPARTY.md locally; no loader/source binaries are vendored here. |
+| U-Boot / GRUB | Separate pinned sources/build inputs; GPL-2.0 with per-file terms for U-Boot, GPL-3.0-or-later for GRUB. No loader binaries belong in this Git tree. |
+
+Build inputs, including vendor firmware, are fetched separately. Redistribution
+of firmware and complete assembled images requires a separate terms review.

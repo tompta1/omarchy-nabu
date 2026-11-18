@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+# Same source revision/SSC feature as Pocketblue; Kumar-Jy discovery patch
+# replaces its narrower no-exit patch. Do not stack both onto the same function.
+pkgname=iio-sensor-proxy
+pkgver=3.9
+pkgrel=7
+_commit=0085ddf8ecb173a1c5fcf2344aa40e561125354f
+pkgdesc='SensorProxy with Nabu SSC discovery and Xiaomi SAR fallback'
+arch=('aarch64')
+url='https://gitlab.freedesktop.org/hadess/iio-sensor-proxy'
+license=('GPL-3.0-or-later')
+depends=('glib2' 'glibc' 'libgcc' 'libgudev' 'libssc' 'polkit')
+makedepends=('meson' 'ninja' 'systemd')
+source=("$pkgname-$_commit.tar.gz::$url/-/archive/$_commit/$pkgname-$_commit.tar.gz"
+        'discovery.patch' 'proximity.patch')
+sha256sums=('800682aa591fc672e959d2f3a43d1f4f7160a4c1cdabffd0ebff2bb8f3bb29be'
+            'e13c276ae3583c60b40f41383181f3652716c9ac26cb46ab47ed9e7b3b43bc05'
+            'ef663fc82eebed4cbbca84cc74fe2cfd9f1281913eac64b4a2e11d0f539483e6')
+
+prepare() {
+  cd "$srcdir/$pkgname-$_commit"
+  patch --fuzz=0 -Np1 -i "$srcdir/discovery.patch"
+  patch --fuzz=0 -Np1 -i "$srcdir/proximity.patch"
+}
+
+build() {
+  arch-meson "$srcdir/$pkgname-$_commit" build \
+    -Dsystemdsystemunitdir=/usr/lib/systemd/system \
+    -Dudevrulesdir=/usr/lib/udev/rules.d -Dsysconfdir=/usr/share \
+    -Dgtk_doc=false -Dgtk-tests=false -Dssc-support=enabled
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+  install -Dm644 "$srcdir/$pkgname-$_commit/COPYING" "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+}

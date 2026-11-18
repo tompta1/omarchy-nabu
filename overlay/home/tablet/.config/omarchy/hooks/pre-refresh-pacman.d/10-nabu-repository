@@ -1,0 +1,4 @@
+#!/bin/bash
+set -euo pipefail
+# Use Omarchy's supported customization point after a channel template refresh.
+sudo /usr/local/libexec/omarchy-nabu-pacman-restore

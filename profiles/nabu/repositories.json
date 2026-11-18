@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "architecture": "aarch64",
+  "channel": "stable",
+  "desktop_version": "4.5.0",
+  "repositories": [
+    {
+      "name": "omarchy",
+      "server": "https://pkgs.omarchy.org/stable/$arch"
+    },
+    {
+      "name": "core",
+      "server": "https://arm-stable-mirror.omarchy.org/$arch/$repo"
+    },
+    {
+      "name": "extra",
+      "server": "https://arm-stable-mirror.omarchy.org/$arch/$repo"
+    },
+    {
+      "name": "alarm",
+      "server": "https://arm-stable-mirror.omarchy.org/$arch/$repo"
+    },
+    {
+      "name": "nabu",
+      "server": "https://github.com/Kumar-Jy/nabu-pkgs/releases/download/repo"
+    }
+  ],
+  "hardware_overrides": {},
+  "source_packages": [
+    "libssc",
+    "iio-sensor-proxy"
+  ],
+  "held_packages": [
+    "linux-nabu",
+    "linux-nabu-headers",
+    "linux-nabu-local",
+    "linux-nabu-debug",
+    "linux-nabu-debug-next",
+    "libssc",
+    "iio-sensor-proxy"
+  ],
+  "normal_applications": [
+    "omarchy",
+    "google-chrome",
+    "brave-bin"
+  ]
+}

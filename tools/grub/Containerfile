@@ -1,0 +1,4 @@
+FROM localhost/omarchy-nabu-builder:alpine322
+RUN apk add --no-cache gnupg
+WORKDIR /project
+ENTRYPOINT ["/bin/bash"]

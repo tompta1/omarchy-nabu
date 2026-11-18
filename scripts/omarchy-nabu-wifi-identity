@@ -1,0 +1,73 @@
+#!/usr/bin/python3
+"""Configure a per-device stable WLAN MAC without bouncing a live connection."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import tempfile
+
+SOURCES = ('sys/class/dmi/id/board_serial', 'proc/device-tree/serial-number',
+           'sys/devices/soc0/serial_number', 'etc/machine-id')
+PLACEHOLDERS = {'', '0', 'unknown', 'none', 'default string',
+                'to be filled by o.e.m.', '0123456789', '123456789', 'deadbeef'}
+
+
+def identity(root):
+    for source in SOURCES:
+        try:
+            value = (root/source).read_text().strip('\x00\r\n ')
+        except (OSError, UnicodeError):
+            continue
+        if value.lower() in PLACEHOLDERS or not value.strip('0'):
+            continue
+        if source == 'etc/machine-id' and (len(value) != 32 or any(c not in '0123456789abcdef' for c in value.lower())):
+            continue
+        return source, value
+    raise RuntimeError('No hardware serial or initialized per-device machine ID available')
+
+
+def stable_mac(value):
+    # Preserve nabu-pmac's existing hash/mask when a DMI identity is available.
+    octets = bytearray(hashlib.sha256(value.encode()).digest()[:6])
+    octets[0] = (octets[0] & 0xFC) | 0x02
+    return ':'.join(f'{value:02x}' for value in octets)
+
+
+def configure(root, mac):
+    directory = root/'etc/NetworkManager/conf.d'
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory/'90-nabu-wifi-identity.conf'
+    text = ('# Generated per device; connection-specific MAC choices take precedence.\n'
+            '[connection-nabu-wifi-identity]\n'
+            'match-device=type:wifi\n'
+            f'wifi.cloned-mac-address={mac}\n')
+    if target.exists() and target.read_text() == text:
+        return
+    with tempfile.NamedTemporaryFile(mode='w', dir=directory, delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+            temporary.chmod(0o644)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--configure', action='store_true', help='Write NetworkManager default; do not reconnect')
+    parser.add_argument('--root', type=Path, default=Path('/'), help='Alternate filesystem root for offline tests')
+    args = parser.parse_args()
+    source, value = identity(args.root)
+    mac = stable_mac(value)
+    if args.configure:
+        configure(args.root, mac)
+    print(json.dumps({'identity_source': source, 'stable_mac': mac,
+                      'configured': args.configure, 'reconnected': False}))
+
+
+if __name__ == '__main__':
+    main()

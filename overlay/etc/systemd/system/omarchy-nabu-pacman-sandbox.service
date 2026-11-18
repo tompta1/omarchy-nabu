@@ -1,0 +1,11 @@
+[Unit]
+Description=Select pacman filesystem sandbox for the running Nabu kernel
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/omarchy-nabu-pacman-sandbox
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

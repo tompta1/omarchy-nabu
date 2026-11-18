@@ -1,0 +1,555 @@
+Subject: [HW-08 candidate] Iris VPU5 balanced PM and error lifecycle
+
+Retain the firmware image, queues and sessions, but balance
+power/clock/OPP references across system PM and restore LLCC resources.
+Drain hard IRQs before PM clock-off; full teardown drains IRQ threads
+outside their core mutex. Keep a failed core in ERROR until teardown and
+serialize full init/deinit.
+
+Independent completed-power ownership adapts the idempotent power-off
+approach from the CFM880/nabu-iris idempotent power-off change:
+https://github.com/CFM880/nabu-
+iris/commit/945e8b954027ab55f28edf92186df986f0802c02 Unlike that older
+interface, this tree unwinds partial acquisitions in power-on and records
+ownership only after complete success. Propagate OPP vote failures.
+
+The legacy WFI/PC_READY and secure-state handshake follows the Qualcomm
+Iris1 reference linked in docs/iris-driver-review.md. This is an
+unqualified candidate, not a confirmed deep-sleep fix. It replaces the
+failed debug5 PM patch.
+
+diff --git a/drivers/media/platform/qcom/iris/iris_core.c b/drivers/media/platform/qcom/iris/iris_core.c
+index e6010163b42eb59a5ac43ced199cc83f05cd2782..2a450ce26ec3ed0215983d9381c33da81f6b593f 100644
+--- a/drivers/media/platform/qcom/iris/iris_core.c
++++ b/drivers/media/platform/qcom/iris/iris_core.c
+@@ -12,47 +12,61 @@
+ 
+ void iris_core_deinit(struct iris_core *core)
+ {
++	bool legacy = core->iris_platform_data->legacy_vpu5;
+ 	int ret;
+ 
++	mutex_lock(&core->init_lock);
+ 	ret = pm_runtime_resume_and_get(core->dev);
+ 
++	/* Drain IRQ threads before taking their mutex or freeing shared queues. */
++	if (legacy)
++		disable_irq(core->irq);
+ 	mutex_lock(&core->lock);
+ 	if (core->state != IRIS_CORE_DEINIT) {
+-		if (core->iris_platform_data->legacy_vpu5)
++		if (legacy && !core->legacy_pm_suspended)
+ 			iris_set_hw_state(core, false);
+ 		iris_fw_unload(core);
+ 
+-		if (!ret)
++		if (!ret && !core->legacy_pm_suspended)
+ 			iris_vpu_power_off(core);
+ 
+ 		iris_hfi_queues_deinit(core);
+ 		core->state = IRIS_CORE_DEINIT;
+ 	}
++	core->legacy_pm_suspended = false;
+ 	mutex_unlock(&core->lock);
++	/* Drop only the extra drain reference; power-off retains its own mask. */
++	if (legacy)
++		enable_irq(core->irq);
+ 
+ 	if (!ret)
+ 		pm_runtime_put_sync(core->dev);
++	mutex_unlock(&core->init_lock);
+ }
+ 
+ static int iris_wait_for_system_response(struct iris_core *core)
+ {
+-	int ret;
++	unsigned long done;
++	int ret = 0;
+ 
+-	if (core->state == IRIS_CORE_ERROR)
+-		return -EIO;
+-
+-	ret = wait_for_completion_timeout(&core->core_init_done,
+-					  msecs_to_jiffies(HW_RESPONSE_TIMEOUT_VALUE));
+-	if (!ret) {
++	done = wait_for_completion_timeout(&core->core_init_done,
++					   msecs_to_jiffies(HW_RESPONSE_TIMEOUT_VALUE));
++	mutex_lock(&core->lock);
++	if (core->state == IRIS_CORE_ERROR) {
++		ret = -EIO;
++	} else if (!done) {
+ 		core->state = IRIS_CORE_ERROR;
+-		return -ETIMEDOUT;
++		ret = -ETIMEDOUT;
+ 	}
++	mutex_unlock(&core->lock);
+ 
+-	return 0;
++	return ret;
+ }
+ 
+-int iris_core_init(struct iris_core *core)
++static int iris_core_init_locked(struct iris_core *core)
+ {
++	bool unload_fw = false, power_off = false, deinit_queues = false;
++	bool drain_irq = false;
+ 	int ret;
+ 
+ 	mutex_lock(&core->lock);
+@@ -61,10 +75,11 @@ int iris_core_init(struct iris_core *core)
+ 		goto exit;
+ 	} else if (core->state == IRIS_CORE_ERROR) {
+ 		ret = -EINVAL;
+-		goto error;
++		goto exit;
+ 	}
+ 
+ 	core->state = IRIS_CORE_INIT;
++	reinit_completion(&core->core_init_done);
+ 
+ 	ret = iris_hfi_queues_init(core);
+ 	if (ret)
+@@ -106,17 +121,46 @@ int iris_core_init(struct iris_core *core)
+ 	return iris_wait_for_system_response(core);
+ 
+ error_unload_fw:
+-	if (core->iris_platform_data->legacy_vpu5)
+-		iris_set_hw_state(core, false);
+-	iris_fw_unload(core);
++	unload_fw = true;
+ error_power_off:
+-	iris_vpu_power_off(core);
++	power_off = true;
+ error_queue_deinit:
+-	iris_hfi_queues_deinit(core);
++	deinit_queues = true;
+ error:
++	/* Block commands while dropping the mutex to drain an enabled IRQ. */
++	core->state = IRIS_CORE_ERROR;
++	drain_irq = power_off && core->iris_platform_data->legacy_vpu5;
++	mutex_unlock(&core->lock);
++	if (drain_irq)
++		disable_irq(core->irq);
++	mutex_lock(&core->lock);
++	if (unload_fw) {
++		if (core->iris_platform_data->legacy_vpu5)
++			iris_set_hw_state(core, false);
++		iris_fw_unload(core);
++	}
++	if (power_off)
++		iris_vpu_power_off(core);
++	if (deinit_queues)
++		iris_hfi_queues_deinit(core);
+ 	core->state = IRIS_CORE_DEINIT;
++	mutex_unlock(&core->lock);
++	if (drain_irq)
++		enable_irq(core->irq);
++	return ret;
+ exit:
+ 	mutex_unlock(&core->lock);
+ 
+ 	return ret;
+ }
++
++int iris_core_init(struct iris_core *core)
++{
++	int ret;
++
++	mutex_lock(&core->init_lock);
++	ret = iris_core_init_locked(core);
++	mutex_unlock(&core->init_lock);
++
++	return ret;
++}
+diff --git a/drivers/media/platform/qcom/iris/iris_core.h b/drivers/media/platform/qcom/iris/iris_core.h
+index 988ecb40a22fef9a4bb15ba41927f60a421686b2..e5e2823fc2e7e052b6973e5e270d453997d61cc7 100644
+--- a/drivers/media/platform/qcom/iris/iris_core.h
++++ b/drivers/media/platform/qcom/iris/iris_core.h
+@@ -70,6 +70,7 @@ struct llcc_slice_desc;
+  * @command_queue: shared interface queue to send commands to firmware
+  * @message_queue: shared interface queue to receive responses from firmware
+  * @debug_queue: shared interface queue to receive debug info from firmware
++ * @init_lock: serialize full initialization/teardown, never acquired by PM or IRQ
+  * @lock: a lock for this strucure
+  * @response_packet: a pointer to response packet from fw to driver
+  * @header_id: id of packet header
+@@ -116,6 +117,7 @@ struct iris_core {
+ 	struct iris_iface_q_info		command_queue;
+ 	struct iris_iface_q_info		message_queue;
+ 	struct iris_iface_q_info		debug_queue;
++	struct mutex				init_lock;
+ 	struct mutex				lock; /* lock for core related operations */
+ 	u8					*response_packet;
+ 	u32					header_id;
+@@ -136,6 +138,9 @@ struct iris_core {
+ 	struct dma_iova_state			*iova_state;
+ 	/* Experimental HW-08 diagnostics, serialized by core->lock. */
+ 	bool					pm_trace_pending;
++	bool					legacy_pm_suspended;
++	/* Completed power-on ownership, independent of firmware PM state. */
++	bool					vpu_powered;
+ };
+ 
+ int iris_core_init(struct iris_core *core);
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_common.c b/drivers/media/platform/qcom/iris/iris_hfi_common.c
+index b2cffc2302bb583f8aeb8a034d0494b6636ee86d..d673cd58d9715b09a655a3c9ea252b35d3539d35 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_common.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_common.c
+@@ -139,8 +139,7 @@ int iris_hfi_pm_suspend(struct iris_core *core)
+ 	int ret;
+ 
+ 	if (core->iris_platform_data->legacy_vpu5) {
+-		iris_vpu_trace_pm(core, "suspend-skip");
+-		return 0;
++		return iris_vpu5_suspend(core);
+ 	}
+ 
+ 	ret = iris_vpu_prepare_pc(core);
+@@ -170,8 +169,7 @@ int iris_hfi_pm_resume(struct iris_core *core)
+ 	int ret;
+ 
+ 	if (core->iris_platform_data->legacy_vpu5) {
+-		iris_vpu_trace_pm(core, "resume-skip");
+-		return 0;
++		return iris_vpu5_resume(core);
+ 	}
+ 
+ 	ret = iris_vpu_power_on(core);
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_common.h b/drivers/media/platform/qcom/iris/iris_hfi_common.h
+index a27447eb2519962cb958b0e330a6d018310c3450..4fcf630c79b9b46691783f0a72212b87f7e8b60e 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_common.h
++++ b/drivers/media/platform/qcom/iris/iris_hfi_common.h
+@@ -110,6 +110,8 @@ struct iris_hfi_sys_ops {
+ 	int (*sys_image_version)(struct iris_core *core);
+ 	int (*sys_interframe_powercollapse)(struct iris_core *core);
+ 	int (*sys_pc_prep)(struct iris_core *core);
++	/* Called with core->lock held after retained firmware resume. */
++	int (*sys_restore_resources)(struct iris_core *core);
+ 
+ 	void (*sys_hfi_response_handler)(struct iris_core *core);
+ 
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c b/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c
+index 3247e394c1ff9858c5b756b88c1d93ab7462fa7d..f5ace46f3c7d37bff0c1313afcd96ceebfde1299 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c
+@@ -8,6 +8,7 @@
+ #include "iris_instance.h"
+ #include "iris_vpu_buffer.h"
+ 
++#include <linux/pm_runtime.h>
+ #include <linux/soc/qcom/llcc-qcom.h>
+ #include <media/v4l2-mem2mem.h>
+ 
+@@ -110,13 +111,14 @@ static int iris_hfi_gen1_sys_debug_config(struct iris_core *core)
+ 	return ret;
+ }
+ 
+-static int iris_hfi_gen1_syscache_config(struct iris_core *core)
++static int iris_hfi_gen1_syscache_config_locked(struct iris_core *core)
+ {
+ 	static const u32 usecase_ids[] = { LLCC_VIDSC0, LLCC_VIDSC1 };
+ 	struct hfi_sys_set_resource_pkt *pkt;
+ 	u32 packet_size, i;
+ 	int ret;
+ 
++	lockdep_assert_held(&core->lock);
+ 	if (core->syscache_set)
+ 		return 0;
+ 
+@@ -169,7 +171,7 @@ static int iris_hfi_gen1_syscache_config(struct iris_core *core)
+ 	dev_info(core->dev,
+ 		 "Iris1 v57: setting LLCC resources: id=%u size=%u KiB, id=%u size=%u KiB\n",
+ 		 pkt->data[2], pkt->data[1], pkt->data[4], pkt->data[3]);
+-	ret = iris_hfi_queue_cmd_write(core, pkt, packet_size);
++	ret = iris_hfi_queue_cmd_write_locked(core, pkt, packet_size);
+ 	kfree(pkt);
+ 	if (ret)
+ 		goto error_deactivate;
+@@ -192,6 +194,21 @@ static int iris_hfi_gen1_syscache_config(struct iris_core *core)
+ 	return ret;
+ }
+ 
++static int iris_hfi_gen1_syscache_config(struct iris_core *core)
++{
++	int ret;
++
++	ret = pm_runtime_resume_and_get(core->dev);
++	if (ret < 0)
++		return ret;
++	mutex_lock(&core->lock);
++	ret = iris_hfi_gen1_syscache_config_locked(core);
++	mutex_unlock(&core->lock);
++	pm_runtime_put_autosuspend(core->dev);
++
++	return ret;
++}
++
+ static int iris_hfi_gen1_sys_interframe_powercollapse(struct iris_core *core)
+ {
+ 	return iris_hfi_gen1_sys_power_control(core, true);
+@@ -1442,6 +1459,7 @@ static const struct iris_hfi_sys_ops iris_hfi_gen1_sys_ops = {
+ 	.sys_image_version = iris_hfi_gen1_sys_image_version,
+ 	.sys_interframe_powercollapse = iris_hfi_gen1_sys_interframe_powercollapse,
+ 	.sys_pc_prep = iris_hfi_gen1_sys_pc_prep,
++	.sys_restore_resources = iris_hfi_gen1_syscache_config_locked,
+ 
+ 	.sys_hfi_response_handler = iris_hfi_gen1_response_handler,
+ 
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_queue.c b/drivers/media/platform/qcom/iris/iris_hfi_queue.c
+index 4360f96c6681b345fdb09fe42edcd44391d52782..032c34b23ced4450b66ce3daf2f49b7689dd33a1 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_queue.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_queue.c
+@@ -115,6 +115,8 @@ int iris_hfi_queue_cmd_write_locked(struct iris_core *core, void *pkt, u32 pkt_s
+ 
+ 	if (core->state == IRIS_CORE_ERROR || core->state == IRIS_CORE_DEINIT)
+ 		return -EINVAL;
++	if (core->iris_platform_data->legacy_vpu5 && core->legacy_pm_suspended)
++		return -EHOSTDOWN;
+ 
+ 	if (!iris_hfi_queue_write(q_info, pkt, pkt_size)) {
+ 		iris_vpu_raise_interrupt(core);
+diff --git a/drivers/media/platform/qcom/iris/iris_probe.c b/drivers/media/platform/qcom/iris/iris_probe.c
+index fe098f4cd34e36669b37bf64fd339330428f7ea5..d3a5eccc2f16491b173af575c94674844af7c115 100644
+--- a/drivers/media/platform/qcom/iris/iris_probe.c
++++ b/drivers/media/platform/qcom/iris/iris_probe.c
+@@ -261,6 +261,7 @@ static void iris_remove(struct platform_device *pdev)
+ 	iris_unreserve_iova_region(core->dev, core->iova_state);
+ 
+ 	mutex_destroy(&core->lock);
++	mutex_destroy(&core->init_lock);
+ }
+ 
+ static void iris_sys_error_handler(struct work_struct *work)
+@@ -285,6 +286,7 @@ static int iris_probe(struct platform_device *pdev)
+ 	core->dev = dev;
+ 
+ 	core->state = IRIS_CORE_DEINIT;
++	mutex_init(&core->init_lock);
+ 	mutex_init(&core->lock);
+ 	init_completion(&core->core_init_done);
+ 
+diff --git a/drivers/media/platform/qcom/iris/iris_vpu_common.c b/drivers/media/platform/qcom/iris/iris_vpu_common.c
+index fefc7b2457740922e3374cabdde4c55517bdb0cb..e7cbdb7a2f4d90275f0e4b5f9b1816d4dcda44bd 100644
+--- a/drivers/media/platform/qcom/iris/iris_vpu_common.c
++++ b/drivers/media/platform/qcom/iris/iris_vpu_common.c
+@@ -11,6 +11,7 @@
+ #include <linux/soc/qcom/llcc-qcom.h>
+ 
+ #include "iris_core.h"
++#include "iris_firmware.h"
+ #include "iris_instance.h"
+ #include "iris_vpu_common.h"
+ #include "iris_vpu_register_defines.h"
+@@ -143,7 +144,7 @@ int iris_vpu_boot_firmware(struct iris_core *core)
+ 		ctrl_status = readl(core->reg_base + cpu_cs_base + 0x4c);
+ 		if ((ctrl_status & CTRL_ERROR_STATUS__M) == 0x4) {
+ 			dev_err(core->dev, "invalid setting for uc_region\n");
+-			break;
++			return -EINVAL;
+ 		}
+ 
+ 		usleep_range(50, 100);
+@@ -244,6 +245,123 @@ int iris_vpu_watchdog(struct iris_core *core, u32 intr_status)
+ 	return 0;
+ }
+ 
++static int iris_vpu5_prepare_pc(struct iris_core *core)
++{
++	u32 ctrl_reg = iris_vpu_cpu_cs_base(core) + 0x4c;
++	u32 cpu_reg = iris_vpu_wrapper_base(core) + 0x2014;
++	u32 ctrl;
++	int ret;
++
++	/* VPU5 uses the non-TZ wrapper WFI bit, as in downstream Iris1. */
++	ctrl = readl(core->reg_base + ctrl_reg);
++	if (ctrl & CTRL_STATUS_PC_READY)
++		return 0;
++
++	ret = readl_poll_timeout(core->reg_base + ctrl_reg, ctrl,
++				 (ctrl & CTRL_INIT_IDLE_MSG_BMSK) &&
++				 (readl(core->reg_base + cpu_reg) & BIT(0)),
++				 1500, 150000);
++	if (ret)
++		goto error;
++
++	ret = core->hfi_sys_ops->sys_pc_prep(core);
++	if (ret)
++		goto error;
++
++	ret = readl_poll_timeout(core->reg_base + ctrl_reg, ctrl,
++				 (ctrl & CTRL_STATUS_PC_READY) &&
++				 (readl(core->reg_base + cpu_reg) & BIT(0)),
++				 1500, 150000);
++	if (!ret)
++		return 0;
++
++error:
++	dev_err(core->dev, "VPU5 not ready for power collapse: %d ctrl=%#x\n",
++		ret, ctrl);
++	return ret;
++}
++
++static void iris_vpu_power_off_resources(struct iris_core *core);
++
++static void iris_vpu5_pm_power_off(struct iris_core *core)
++{
++	if (!core->vpu_powered)
++		return;
++
++	/*
++	 * Queues remain allocated throughout PM. Drain only the hard handler,
++	 * which accesses MMIO without core->lock. A pending thread may need
++	 * that mutex; its command writes are blocked while suspended.
++	 */
++	if (!iris_vpu_watchdog(core, core->intr_status))
++		disable_irq_nosync(core->irq);
++	synchronize_hardirq(core->irq);
++	iris_vpu_power_off_resources(core);
++}
++
++int iris_vpu5_suspend(struct iris_core *core)
++{
++	int ret;
++
++	lockdep_assert_held(&core->lock);
++	if (core->legacy_pm_suspended)
++		return 0;
++
++	ret = iris_vpu5_prepare_pc(core);
++	if (ret)
++		return ret;
++
++	ret = iris_set_hw_state(core, false);
++	if (ret)
++		return ret;
++
++	core->legacy_pm_suspended = true;
++	iris_vpu5_pm_power_off(core);
++	iris_vpu_trace_pm(core, "suspend-balanced");
++	return 0;
++}
++
++int iris_vpu5_resume(struct iris_core *core)
++{
++	int ret;
++
++	lockdep_assert_held(&core->lock);
++	if (!core->legacy_pm_suspended)
++		return 0;
++
++	ret = iris_vpu_power_on(core);
++	if (ret)
++		goto error;
++
++	ret = iris_set_hw_state(core, true);
++	if (ret)
++		goto err_power_off;
++
++	ret = iris_vpu_boot_firmware(core);
++	if (ret)
++		goto err_suspend_hw;
++
++	/* Restore cache resources for retained sessions, before any new open. */
++	core->legacy_pm_suspended = false;
++	if (core->hfi_sys_ops->sys_restore_resources) {
++		ret = core->hfi_sys_ops->sys_restore_resources(core);
++		if (ret)
++			goto err_suspend_hw;
++	}
++	iris_vpu_trace_pm(core, "resume-balanced");
++	return 0;
++
++err_suspend_hw:
++	core->legacy_pm_suspended = true;
++	iris_set_hw_state(core, false);
++err_power_off:
++	iris_vpu5_pm_power_off(core);
++error:
++	core->state = IRIS_CORE_ERROR;
++	dev_err(core->dev, "failed to restore balanced VPU5 context: %d\n", ret);
++	return ret;
++}
++
+ int iris_vpu_prepare_pc(struct iris_core *core)
+ {
+ 	u32 wfi_status, idle_status, pc_ready;
+@@ -345,10 +463,19 @@ void iris_vpu_power_off_hw(struct iris_core *core)
+ 	iris_disable_power_domains(core, core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN]);
+ }
+ 
+-void iris_vpu_power_off(struct iris_core *core)
++static void iris_vpu_power_off_resources(struct iris_core *core)
+ {
+ 	int i;
+ 
++	/*
++	 * Keep power ownership separate from firmware collapse state, following
++	 * CFM880/nabu-iris 945e8b954027 (duplicate power-off PM underflow fix).
++	 * Our power-on error paths unwind partial acquisitions themselves.
++	 */
++	if (!core->vpu_powered)
++		return;
++	core->vpu_powered = false;
++
+ 	if (core->llcc_active) {
+ 		for (i = ARRAY_SIZE(core->llcc_slices) - 1; i >= 0; i--) {
+ 			if (core->llcc_slices[i]) {
+@@ -365,7 +492,13 @@ void iris_vpu_power_off(struct iris_core *core)
+ 	iris_opp_set_rate(core->dev, 0);
+ 	core->iris_platform_data->vpu_ops->power_off_controller(core);
+ 	iris_unset_icc_bw(core);
++}
+ 
++void iris_vpu_power_off(struct iris_core *core)
++{
++	if (!core->vpu_powered)
++		return;
++	iris_vpu_power_off_resources(core);
+ 	if (!iris_vpu_watchdog(core, core->intr_status))
+ 		disable_irq(core->irq);
+ }
+@@ -735,6 +868,9 @@ int iris_vpu_power_on(struct iris_core *core)
+ 	u32 freq;
+ 	int ret;
+ 
++	if (core->vpu_powered)
++		return -EALREADY;
++
+ 	ret = iris_set_icc_bw(core, INT_MAX);
+ 	if (ret)
+ 		goto err;
+@@ -752,7 +888,12 @@ int iris_vpu_power_on(struct iris_core *core)
+ 	freq = core->power.clk_freq ? core->power.clk_freq :
+ 				      (u32)ULONG_MAX;
+ 
+-	iris_opp_set_rate(core->dev, freq);
++	ret = iris_opp_set_rate(core->dev, freq);
++	if (ret) {
++		if (!iris_vpu_uses_legacy_vpu5(core))
++			core->iris_platform_data->vpu_ops->power_off_hw(core);
++		goto err_clear_opp;
++	}
+ 
+ 	if (iris_vpu_uses_legacy_vpu5(core)) {
+ 		ret = core->iris_platform_data->vpu_ops->power_on_hw(core);
+@@ -764,6 +905,7 @@ int iris_vpu_power_on(struct iris_core *core)
+ 
+ 	iris_vpu_interrupt_init(core);
+ 	core->intr_status = 0;
++	core->vpu_powered = true;
+ 	iris_vpu_trace_pm(core, "power-on");
+ 	enable_irq(core->irq);
+ 
+diff --git a/drivers/media/platform/qcom/iris/iris_vpu_common.h b/drivers/media/platform/qcom/iris/iris_vpu_common.h
+index 94e0a9d7aebe4d13c8215a4a33faa55b4fbeb047..dd6871ad45cb40370324b92ea71a42bd8a2af686 100644
+--- a/drivers/media/platform/qcom/iris/iris_vpu_common.h
++++ b/drivers/media/platform/qcom/iris/iris_vpu_common.h
+@@ -27,6 +27,8 @@ struct vpu_ops {
+ 
+ int iris_vpu_boot_firmware(struct iris_core *core);
+ void iris_vpu_trace_pm(struct iris_core *core, const char *phase);
++int iris_vpu5_suspend(struct iris_core *core);
++int iris_vpu5_resume(struct iris_core *core);
+ void iris_vpu_raise_interrupt(struct iris_core *core);
+ void iris_vpu_clear_interrupt(struct iris_core *core);
+ int iris_vpu_watchdog(struct iris_core *core, u32 intr_status);

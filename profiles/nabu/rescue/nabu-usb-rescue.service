@@ -1,0 +1,13 @@
+[Unit]
+Description=Physical USB rescue console before switching to the installed OS
+DefaultDependencies=no
+Requires=sysroot.mount
+After=sysroot.mount systemd-udevd.service
+Before=initrd-switch-root.target initrd-switch-root.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/busybox sh /usr/libexec/nabu-usb-rescue
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=infinity

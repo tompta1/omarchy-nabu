@@ -1,0 +1,9 @@
+# Reviewed text-only device integration from pinned Kumar-Jy/Nabu-arch-images.
+# No EFI executables, partition layouts, flashing scripts or firmware archives.
+usr/share/libcamera/ipa/simple/ov13b10.yaml
+usr/share/libcamera/ipa/simple/ov8856.yaml
+usr/libexec/nabu/uki-regenerate
+etc/pacman.d/hooks/90-linux-nabu.uki.hook
+etc/udev/rules.d/99-nabu-partlabel.rules
+usr/lib/udev/rules.d/99-nabu-partlabel.rules
+etc/NetworkManager/conf.d/wifi-powersave-off.conf

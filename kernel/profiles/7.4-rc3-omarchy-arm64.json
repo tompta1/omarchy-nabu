@@ -1,0 +1,65 @@
+{
+  "repository": "https://github.com/Kumar-Jy/linux.git",
+  "branch": "nabu/7.4.y",
+  "commit": "79d4f1c41bb77215167dd7103d023084b9ce7f61",
+  "defconfig": "nabu_defconfig",
+  "kernel_version": "7.4.0-rc3",
+  "source_directory": "upstream/linux-nabu-7.4-candidate",
+  "prepared_tree": "d688810017fd28aa094b5f4d1ac0145f69fe98cb",
+  "upstream_update": {
+    "repository": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git",
+    "base": "7475ea8b58616b33c04afb976cf0fbaad9dd63fb",
+    "commit": "aebb7274476403040d582c61478df8f4a7bf9cd3",
+    "exclude": [
+      "drivers/net/wireless/ath/ath10k/core.c"
+    ]
+  },
+  "resolution_patch": {
+    "path": "kernel/patches/nabu-7.4-rc3-resolution.patch",
+    "sha256": "0e65d2ef01608fc212b061159d47e9929093d6552e170eba0ecdf4f85807a515"
+  },
+  "patches": [
+    {
+      "path": "kernel/patches/iris-vpu5-pm-7.4.patch",
+      "sha256": "5c6020cbb667c9121312e717b4ae2789f8ebe777f9dc8e99e7499749731eb371"
+    },
+    {
+      "path": "kernel/patches/nabu-7.4-build-resolutions.patch",
+      "sha256": "777021776d7bcdea77a3cf627e252605ce20b8b67ab7136031c5837fdc663ba2"
+    },
+    {
+      "path": "kernel/patches/nabu-7.4-camss-resolution.patch",
+      "sha256": "4bc84ee2e445e772c62db8ccdbeafa94f01c6c14b6b266a8126cb894926ffca3"
+    },
+    {
+      "path": "kernel/patches/nabu-7.4-csiphy-resolution.patch",
+      "sha256": "de5d8f7078fde4db39e972a82e6d5d052fde54b65d2e75f74b2a884c2576db9d"
+    }
+  ],
+  "config_fragment": {
+    "path": "kernel/normal.config",
+    "sha256": "442cfc3b987afb3af8b41b15ecdf8de8ad6b0bb7d6bea49354255facc026523a"
+  },
+  "boot": {
+    "mode": "normal",
+    "cmdline": {
+      "path": "kernel/normal.cmdline",
+      "sha256": "a9a3bcfdf8f66c2e2fa39b542f7c7e9f2b17f03103301fa02a42fd0675c07f71"
+    }
+  },
+  "build": {
+    "output": "out/kernel-7.4-rc3-omarchy-arm64",
+    "work_volume": "omarchy-nabu-kernel-7.4-rc3-omarchy-arm64-work"
+  },
+  "promotion": "OS-12 opt-in candidate for selected Omarchy ARM64 settings; requires separate verification.",
+  "config_override": {
+    "path": "kernel/omarchy-arm64.config",
+    "sha256": "e13237313400bfdede571f3d1bb87c37e65efb383c4a9cbb6a5ac0c910d25f9b"
+  },
+  "config_reference": {
+    "package": "linux-omarchy-7.3-3.1-aarch64.pkg.tar.zst",
+    "channel": "stable",
+    "package_sha256": "f085020f2fd39340385f8249d38d6ab6749eeb367b9b78a5c77d0842fdd47ac9",
+    "embedded_config_sha256": "ff51a67d9ebc2c8bdb6da35c9c393c604ba9b6c0e07efcee00d1ef326ab44f92"
+  }
+}

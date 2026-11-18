@@ -1,0 +1,32 @@
+linux-nabu
+linux-nabu-headers
+linux-firmware-xiaomi-nabu
+alsa-ucm-conf-xiaomi-nabu
+qrtr
+tqftpserv
+rmtfs
+hexagonrpcd
+nabu-pmac
+vulkan-freedreno
+iris-vaapi
+# Bootstrap dependencies; source-built Nabu variants replace these before login.
+libssc
+iio-sensor-proxy
+nabu-autobrightness
+python-gobject
+systemd-ukify
+terminus-font
+e2fsprogs
+networkmanager
+openssh
+sudo
+# Independent touch utilities; Nabu SSC auto-rotation is verified on hardware.
+xournalpp
+camera-studio
+# Camera Studio discovers internal cameras through the separate cam executable.
+libcamera-tools
+wayland-protocols
+libxkbcommon
+cairo
+pango
+scdoc

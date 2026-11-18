@@ -1,0 +1,118 @@
+diff --git a/drivers/media/platform/qcom/iris/iris_core.h b/drivers/media/platform/qcom/iris/iris_core.h
+index 6b15253c6..988ecb40a 100644
+--- a/drivers/media/platform/qcom/iris/iris_core.h
++++ b/drivers/media/platform/qcom/iris/iris_core.h
+@@ -134,6 +134,8 @@ struct iris_core {
+ 	bool					syscache_set;
+ 
+ 	struct dma_iova_state			*iova_state;
++	/* Experimental HW-08 diagnostics, serialized by core->lock. */
++	bool					pm_trace_pending;
+ };
+ 
+ int iris_core_init(struct iris_core *core);
+diff --git a/drivers/media/platform/qcom/iris/iris_hfi_common.c b/drivers/media/platform/qcom/iris/iris_hfi_common.c
+index 4b5f12ef2..b2cffc230 100644
+--- a/drivers/media/platform/qcom/iris/iris_hfi_common.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_common.c
+@@ -138,8 +138,10 @@ int iris_hfi_pm_suspend(struct iris_core *core)
+ {
+ 	int ret;
+ 
+-	if (core->iris_platform_data->legacy_vpu5)
++	if (core->iris_platform_data->legacy_vpu5) {
++		iris_vpu_trace_pm(core, "suspend-skip");
+ 		return 0;
++	}
+ 
+ 	ret = iris_vpu_prepare_pc(core);
+ 	if (ret) {
+@@ -167,8 +169,10 @@ int iris_hfi_pm_resume(struct iris_core *core)
+ 	const struct iris_hfi_sys_ops *ops = core->hfi_sys_ops;
+ 	int ret;
+ 
+-	if (core->iris_platform_data->legacy_vpu5)
++	if (core->iris_platform_data->legacy_vpu5) {
++		iris_vpu_trace_pm(core, "resume-skip");
+ 		return 0;
++	}
+ 
+ 	ret = iris_vpu_power_on(core);
+ 	if (ret)
+diff --git a/drivers/media/platform/qcom/iris/iris_vpu_common.c b/drivers/media/platform/qcom/iris/iris_vpu_common.c
+index da00c5175..fefc7b245 100644
+--- a/drivers/media/platform/qcom/iris/iris_vpu_common.c
++++ b/drivers/media/platform/qcom/iris/iris_vpu_common.c
+@@ -164,12 +164,50 @@ int iris_vpu_boot_firmware(struct iris_core *core)
+ 	return 0;
+ }
+ 
++void iris_vpu_trace_pm(struct iris_core *core, const char *phase)
++{
++	if (!iris_vpu_uses_legacy_vpu5(core))
++		return;
++
++	/* Do not access registers from the PM callbacks themselves. */
++	core->pm_trace_pending = true;
++	dev_info(core->dev, "HW08 PM %s state=%u runtime_active=%d\n",
++		 phase, core->state, pm_runtime_active(core->dev));
++}
++
++static void iris_vpu5_trace_command(struct iris_core *core)
++{
++	u32 cpu = iris_vpu_cpu_cs_base(core);
++	u32 wrapper = iris_vpu_wrapper_base(core);
++	u32 ctrl, qinfo, qaddr, mask, status;
++
++	if (!core->pm_trace_pending)
++		return;
++	core->pm_trace_pending = false;
++
++	/*
++	 * Read only registers already used by this driver's boot/IRQ paths,
++	 * at a command submission where it is already accessing the VPU.
++	 * Log once after power-on or a PM callback, not once per packet.
++	 */
++	ctrl = readl(core->reg_base + cpu + 0x4c);
++	qinfo = readl(core->reg_base + cpu + 0x50);
++	qaddr = readl(core->reg_base + cpu + 0x54);
++	mask = readl(core->reg_base + wrapper + 0x10);
++	status = readl(core->reg_base + wrapper + 0x0c);
++	dev_info(core->dev,
++		 "HW08 command ctrl=%#x qinfo=%#x qaddr_matches=%u irq_mask=%#x irq_status=%#x\n",
++		 ctrl, qinfo, qaddr == (u32)core->iface_q_table_daddr, mask, status);
++}
++
+ void iris_vpu_raise_interrupt(struct iris_core *core)
+ {
+-	if (iris_vpu_uses_legacy_vpu5(core))
++	if (iris_vpu_uses_legacy_vpu5(core)) {
+ 		writel(BIT(15), core->reg_base + VPU5_CPU_IC_BASE_OFFS + 0x18);
+-	else
++		iris_vpu5_trace_command(core);
++	} else {
+ 		writel(1 << CPU_IC_SOFTINT_H2A_SHFT, core->reg_base + CPU_IC_SOFTINT);
++	}
+ }
+ 
+ void iris_vpu_clear_interrupt(struct iris_core *core)
+@@ -726,6 +764,7 @@ int iris_vpu_power_on(struct iris_core *core)
+ 
+ 	iris_vpu_interrupt_init(core);
+ 	core->intr_status = 0;
++	iris_vpu_trace_pm(core, "power-on");
+ 	enable_irq(core->irq);
+ 
+ 	return 0;
+diff --git a/drivers/media/platform/qcom/iris/iris_vpu_common.h b/drivers/media/platform/qcom/iris/iris_vpu_common.h
+index decb7ac5c..94e0a9d7a 100644
+--- a/drivers/media/platform/qcom/iris/iris_vpu_common.h
++++ b/drivers/media/platform/qcom/iris/iris_vpu_common.h
+@@ -26,6 +26,7 @@ struct vpu_ops {
+ };
+ 
+ int iris_vpu_boot_firmware(struct iris_core *core);
++void iris_vpu_trace_pm(struct iris_core *core, const char *phase);
+ void iris_vpu_raise_interrupt(struct iris_core *core);
+ void iris_vpu_clear_interrupt(struct iris_core *core);
+ int iris_vpu_watchdog(struct iris_core *core, u32 intr_status);

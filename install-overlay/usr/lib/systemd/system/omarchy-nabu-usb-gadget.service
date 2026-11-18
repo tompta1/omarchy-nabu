@@ -1,0 +1,13 @@
+[Unit]
+Description=Omarchy Nabu USB network and serial gadget
+Requires=sys-kernel-config.mount
+After=sys-kernel-config.mount systemd-udev-trigger.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/omarchy-nabu-usb-gadget
+RemainAfterExit=yes
+TimeoutStartSec=40
+
+[Install]
+WantedBy=multi-user.target

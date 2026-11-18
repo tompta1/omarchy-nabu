@@ -1,0 +1,12 @@
+#!/bin/bash
+# Installed U-Boot/GRUB layout: UKIs live on ext4 /boot, not the 128 MiB ESP.
+set -euo pipefail
+findmnt -M /boot >/dev/null || { echo '/boot must be mounted before rebuilding kernels' >&2; exit 1; }
+mkdir -p /boot/EFI/arch
+if [[ -e /boot/dtb-linux-nabu ]]; then
+  sed -i 's@^DeviceTree=.*@DeviceTree=/boot/dtb-linux-nabu@' /etc/kernel/uki.conf
+fi
+for preset in /etc/mkinitcpio.d/linux-nabu*.preset; do
+  [[ ! -f $preset ]] || sed -i 's@/boot/efi/EFI/arch/@/boot/EFI/arch/@g' "$preset"
+done
+mkinitcpio -P

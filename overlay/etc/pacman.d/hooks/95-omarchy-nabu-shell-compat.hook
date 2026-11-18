@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = omarchy
+
+[Action]
+Description = Applying reviewed Nabu rotation compatibility fixes to Omarchy
+When = PostTransaction
+Exec = /usr/local/libexec/omarchy-nabu-shell-compat

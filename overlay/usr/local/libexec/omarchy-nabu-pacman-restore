@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+(( EUID == 0 )) || exit 1
+conf=/etc/pacman.conf
+# The stock fallback lacks Landlock; the current debug kernel supports it.
+# Generate the included options file before refreshing its config reference.
+/usr/local/libexec/omarchy-nabu-pacman-sandbox
+python3 /usr/local/libexec/omarchy-nabu-repositories \
+  --policy /usr/share/omarchy-nabu/repositories.json "$conf"
+# Restore the matching ARM stable mirror after an upstream config refresh.
+printf '%s\n' 'Server = https://arm-stable-mirror.omarchy.org/$arch/$repo' \
+  > /etc/pacman.d/mirrorlist

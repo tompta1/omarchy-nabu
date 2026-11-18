@@ -1,0 +1,1 @@
+console=tty0 ignore_loglevel loglevel=8 log_buf_len=8M printk.time=1 initcall_debug drm.debug=0x00 panic=0 systemd.show_status=yes

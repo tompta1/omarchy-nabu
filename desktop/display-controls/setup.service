@@ -1,0 +1,14 @@
+[Unit]
+Description=Enable selected Nabu display controls on first desktop login
+PartOf=graphical-session.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/omarchy-nabu-display-install --session-setup
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target

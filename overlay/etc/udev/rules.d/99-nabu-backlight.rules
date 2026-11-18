@@ -1,0 +1,2 @@
+# Override the package's world-writable backlight rule with the existing video group.
+ACTION=="add", SUBSYSTEM=="backlight", KERNEL=="ktz8866-backlight", RUN+="/usr/bin/chown root:video /sys/class/backlight/%k/brightness", RUN+="/usr/bin/chmod 0664 /sys/class/backlight/%k/brightness"

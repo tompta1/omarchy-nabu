@@ -1,0 +1,170 @@
+#!/usr/bin/python3
+"""Install optional tablet controls through Omarchy's supported display clone."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import time
+
+
+def copy_license(upstream, target, system_paths=None):
+    if system_paths is None:
+        system_paths = (Path('/usr/share/licenses/omarchy/LICENSE'),
+                        Path('/usr/share/licenses/omarchy-nabu/omarchy-MIT.txt'))
+    for source in (upstream/'LICENSE', *system_paths):
+        if source.is_file():
+            shutil.copy2(source, target/'OMARCHY-LICENSE')
+            return
+    raise ValueError('Omarchy license notice is missing; install the matching source notice first')
+
+
+def render_panel(text):
+    anchor = '          // ---------- Text size ----------'
+    command = '["omarchy-brightness-display",'
+    if text.count(anchor) != 1 or text.count(command) != 1:
+        raise ValueError('Unsupported display widget version; upstream files were not modified')
+    component = '''          // Nabu display automation controls
+          NabuControls {
+            width: parent.width
+            panelOpened: root.opened
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+          }
+
+'''
+    return text.replace(anchor, component+anchor).replace(
+        command, '["omarchy-nabu-display-control", "manual-brightness",')
+
+
+def wait_for_shell(timeout=60):
+    deadline = time.monotonic()+timeout
+    while time.monotonic() < deadline:
+        result = subprocess.run(['omarchy-plugin-list', '--json'], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0 and isinstance(json.loads(result.stdout), list):
+            return
+        time.sleep(1)
+    raise ValueError('Omarchy shell is not ready; first-login setup will retry')
+
+
+def enable_clone(plugin_id):
+    subprocess.run(['omarchy-shell', 'shell', 'rescanPlugins'], check=True, timeout=5)
+    for attempt in range(30):
+        result = subprocess.run(['omarchy-plugin-list', '--json'], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0 and any(row['id'] == plugin_id for row in json.loads(result.stdout)):
+            subprocess.run(['omarchy-plugin-enable', plugin_id], check=True, timeout=5)
+            return
+        time.sleep(0.1)
+    raise ValueError('Display clone was not discovered')
+
+
+def complete_setup(marker):
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix='.display-setup-', dir=marker.parent)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            stream.write('Display clone enabled successfully through Omarchy plugin IPC.\n')
+        os.replace(temporary, marker)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--resources', type=Path, default=Path('/usr/local/share/omarchy-nabu/display-controls'))
+    parser.add_argument('--session-setup', action='store_true', help='One-time opt-in display setup after shell IPC is ready')
+    args = parser.parse_args()
+    if os.geteuid() == 0:
+        raise ValueError('Run display setup as the desktop user, not root')
+    lock = Path.home()/'.local/state/omarchy-nabu/display-install.lock'
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open('a') as stream:
+        # First-login service and a simultaneous manual launch must not remove
+        # or replace each other's newly staged clone after an IPC failure.
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        install_display(args)
+
+
+def install_display(args):
+    marker = Path.home()/'.local/state/omarchy-nabu/display-setup.done'
+    if args.session_setup and marker.exists():
+        return
+    upstream = Path(os.environ.get('OMARCHY_PATH', '/usr/share/omarchy'))
+    os.environ['OMARCHY_PATH'] = str(upstream)
+    os.environ['PATH'] = str(upstream/'bin')+os.pathsep+os.environ.get('PATH', '')
+    source = upstream/'shell/plugins/panels/monitor'
+    panel = source/'Panel.qml'
+    plugin_id = 'nabu.display'
+    target = Path.home()/'.config/omarchy/plugins'/plugin_id
+    if args.session_setup:
+        wait_for_shell()
+    if target.exists():
+        if not (target/'nabu-display-receipt.json').is_file():
+            raise ValueError('A display clone already exists; preserving its user edits')
+        if not (target/'OMARCHY-LICENSE').is_file():
+            receipt = json.loads((target/'nabu-display-receipt.json').read_text())
+            if receipt.get('upstream_panel_sha256') != hashlib.sha256(panel.read_bytes()).hexdigest():
+                raise ValueError('Existing clone lacks its matching original license; review its source version')
+            copy_license(upstream, target)
+        # A previous first-login attempt may have renamed the complete clone
+        # before IPC became available. Retry enablement without replacing QML.
+        enable_clone(plugin_id)
+        if args.session_setup:
+            complete_setup(marker)
+        print(f'Nabu display controls enabled at {target}; preserving local clone')
+        return
+    # Validate both insertion points before creating or enabling a clone.
+    rendered = render_panel(panel.read_text())
+    component = args.resources/'NabuControls.qml'
+    if not component.is_file():
+        raise ValueError('Nabu display resources are not installed')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix='.nabu-display-', dir=target.parent))
+    try:
+        # Stage every QML file before first discovery. Adding types after loading
+        # a live clone can leave Quickshell's external-directory scanner stale.
+        shutil.copytree(source, stage, dirs_exist_ok=True)
+        shutil.copy2(component, stage/'NabuControls.qml')
+        copy_license(upstream, stage)
+        manifest = json.loads((stage/'manifest.json').read_text())
+        manifest['id'] = plugin_id
+        manifest['name'] = 'Nabu Display'
+        manifest.setdefault('omarchy', {})['clonedFrom'] = 'omarchy.monitor'
+        manifest.setdefault('barWidget', {})['displayName'] = 'Nabu Display'
+        manifest['entryPoints']['barWidget'] = 'NabuDisplay.qml'
+        manifest['description'] = 'Upstream display controls with optional Nabu automation switches'
+        (stage/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
+        (stage/'NabuDisplay.qml').write_text(rendered)
+        subprocess.run(['omarchy-plugin-validate', str(stage)], check=True)
+        (stage/'nabu-display-receipt.json').write_text(json.dumps({
+            'upstream_panel_sha256': hashlib.sha256(panel.read_bytes()).hexdigest(),
+            'patched_panel_sha256': hashlib.sha256(rendered.encode()).hexdigest(),
+            'entry_point': 'NabuDisplay.qml',
+            'upstream_version': 'from-installed-package',
+            'controls': ['auto-brightness', 'auto-rotate'],
+            'source_untouched': True}, indent=2)+'\n')
+        os.rename(stage, target)
+        enable_clone(plugin_id)
+        if args.session_setup:
+            complete_setup(marker)
+    except Exception:
+        # The official removal command restores the original built-in widget.
+        if target.exists():
+            subprocess.run(['omarchy-plugin-remove', plugin_id, '--yes'], check=False)
+        raise
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+    print(f'Installed {target.name}; original display widget remains package-owned and unchanged')
+    print(f'Revert: omarchy plugin remove {target.name} --yes')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise SystemExit(str(error))

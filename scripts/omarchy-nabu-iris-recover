@@ -1,0 +1,55 @@
+#!/usr/bin/python3
+"""Manually reload an idle Nabu Iris decoder after a failed resume (HW-08)."""
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+
+def recover(sysroot, run):
+    if b'xiaomi,nabu' not in (sysroot / 'firmware/devicetree/base/compatible').read_bytes().split(b'\0'):
+        raise ValueError('This recovery is only for Xiaomi Nabu')
+    module = sysroot / 'module/qcom_iris'
+    if (module / 'refcnt').read_text().strip() != '0':
+        raise ValueError('Iris is in use; close video applications and retry')
+    params = module / 'parameters'
+    expected = {'allow_fw_boot', 'cached_capture'}
+    if {p.name for p in params.iterdir()} != expected:
+        raise ValueError('Unrecognized Iris module parameters; review before reloading')
+    values = {}
+    for name in sorted(expected):
+        value = (params / name).read_text().strip()
+        if value not in ('Y', 'N'):
+            raise ValueError(f'Unsupported parameter value: {name}')
+        values[name] = '1' if value == 'Y' else '0'
+    args = ['qcom_iris'] + [f'{name}={value}' for name, value in values.items()]
+    # A concurrent open makes rmmod fail with EBUSY; never force removal.
+    run(['/usr/bin/rmmod', 'qcom_iris'], check=True)
+    try:
+        run(['/usr/bin/modprobe', *args], check=True)
+    except BaseException:
+        # Restore once if the first load failed after successful removal.
+        run(['/usr/bin/modprobe', *args], check=False)
+        raise
+    driver = sysroot / 'bus/platform/devices/aa00000.video-codec/driver'
+    if driver.resolve() != (sysroot / 'bus/platform/drivers/qcom-iris').resolve() or not driver.is_symlink():
+        raise ValueError('Iris driver did not rebind; inspect kernel logs')
+    for name, value in values.items():
+        if (params / name).read_text().strip() != ('Y' if value == '1' else 'N'):
+            raise ValueError(f'Iris parameter was not restored: {name}')
+
+
+def main():
+    if len(sys.argv) != 1:
+        raise ValueError('This command accepts no arguments')
+    if os.geteuid() != 0:
+        raise ValueError('Run this command with sudo')
+    recover(Path('/sys'), subprocess.run)
+    print('Iris driver reloaded. Reopen the video application and test playback.')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f'Iris recovery failed: {exc}')

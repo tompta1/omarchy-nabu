@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "root_type": "btrfs",
+  "root_subvolume": "@",
+  "mount_options": [
+    "noatime",
+    "compress=zstd"
+  ],
+  "subvolumes": {
+    "@": "/",
+    "@home": "/home",
+    "@log": "/var/log",
+    "@pkg": "/var/cache/pacman/pkg"
+  },
+  "boot_type": "ext4",
+  "esp_type": "vfat",
+  "esp_sector_size": 4096,
+  "esp_fat_bits": 16
+}

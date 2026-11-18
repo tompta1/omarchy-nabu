@@ -1,0 +1,75 @@
+#!/usr/bin/python3
+"""Apply narrow Quattro tablet compatibility fixes without a desktop fork."""
+import argparse
+from pathlib import Path
+import shutil
+
+ORIGINAL = '''  Connections {
+    target: root.screen
+    function onXChanged() { settleTimer.restart() }
+    function onYChanged() { settleTimer.restart() }
+  }'''
+REPLACEMENT = '''  // QScreen's geometry notification also fires xChanged/yChanged when only
+  // its size changes (rotation). Bind scalar values so equal coordinates do
+  // not trigger a remap and hide the wallpaper, bar and dock unnecessarily.
+  readonly property real originX: screen ? screen.x : 0
+  readonly property real originY: screen ? screen.y : 0
+  onOriginXChanged: settleTimer.restart()
+  onOriginYChanged: settleTimer.restart()'''
+RELATIVE = 'usr/share/omarchy/shell/Ui/ScreenMoveRemap.qml'
+MEDIA_RELATIVE = 'usr/share/omarchy/shell/Ui/BackgroundMedia.qml'
+MEDIA_ORIGINAL = '      asynchronous: true\n      cache: root.cached'
+MEDIA_REPLACEMENT = ('      asynchronous: true\n'
+                     '      // Keep the displayed wallpaper during a rotation-sized re-decode.\n'
+                     '      retainWhileLoading: true\n      cache: root.cached')
+
+
+
+def apply(root):
+    target = root/RELATIVE
+    if not target.exists():
+        return 'No ScreenMoveRemap helper in this Omarchy version; no change'
+    original = target.read_text()
+    if REPLACEMENT in original:
+        return 'Screen-origin compatibility fix already applied'
+    if original.count(ORIGINAL) != 1:
+        raise ValueError('Unrecognized ScreenMoveRemap version; preserving upstream file for review')
+    backup = root/'var/lib/omarchy-nabu/compat/ScreenMoveRemap.qml.original'
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    if not backup.exists():
+        shutil.copy2(target, backup)
+    target.write_text(original.replace(ORIGINAL, REPLACEMENT, 1))
+    return 'Applied screen-origin compatibility fix; reload the shell to activate'
+
+
+def apply_media(root):
+    target = root/MEDIA_RELATIVE
+    if not target.exists():
+        return 'No BackgroundMedia helper in this Omarchy version; no change'
+    original = target.read_text()
+    if MEDIA_REPLACEMENT in original:
+        return 'Wallpaper retention compatibility fix already applied'
+    if original.count(MEDIA_ORIGINAL) != 1:
+        raise ValueError('Unrecognized BackgroundMedia version; preserving upstream file for review')
+    backup = root/'var/lib/omarchy-nabu/compat/BackgroundMedia.qml.original'
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    if not backup.exists():
+        shutil.copy2(target, backup)
+    target.write_text(original.replace(MEDIA_ORIGINAL, MEDIA_REPLACEMENT, 1))
+    return 'Applied wallpaper retention compatibility fix; reload the shell to activate'
+
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=Path('/'))
+    args = parser.parse_args()
+    print(apply(args.root))
+    print(apply_media(args.root))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError) as error:
+        raise SystemExit(str(error))

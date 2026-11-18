@@ -1,0 +1,8 @@
+#!/bin/bash
+# Toggle the independent Wayland on-screen keyboard.
+set -euo pipefail
+if pgrep -u "$UID" -x wvkbd-mobintl >/dev/null; then
+  pkill -u "$UID" -x wvkbd-mobintl
+else
+  exec wvkbd-mobintl
+fi

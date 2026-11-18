@@ -1,0 +1,121 @@
+{
+  "schema": 1,
+  "board": "xiaomi,nabu",
+  "desktop": {
+    "source": "omarchy",
+    "release": "v4.5.0",
+    "architecture": "aarch64",
+    "channel": "stable"
+  },
+  "reference_sources": [
+    "pocketblue",
+    "pocketblue-packages",
+    "nabu-pkgs"
+  ],
+  "kernel_pin": "kernel/sources.json",
+  "boot_policy": "retain installed U-Boot and ESP; GRUB loads matching kernel/DTB/modules UKIs",
+  "components": [
+    {
+      "name": "libssc",
+      "pocketblue_recipe": "common/libssc/libssc.spec",
+      "selected_recipe": "packages/libssc/PKGBUILD",
+      "kumar_delta": "packages/libssc/0001-report-handler-lifecycle-fixes.patch",
+      "integration": "packages/libssc/lifecycle.patch",
+      "status": "source build wired; dispose context and base signal-ID width adapted to released 0.4.4; hardware validation pending"
+    },
+    {
+      "name": "iio-sensor-proxy",
+      "pocketblue_recipe": "common/iio-sensor-proxy/iio-sensor-proxy.spec",
+      "selected_recipe": "packages/iio-sensor-proxy/PKGBUILD",
+      "kumar_deltas": [
+        "packages/iio-sensor-proxy/0001-fix-ssc-race-condition.patch",
+        "packages/iio-sensor-proxy/0002-ssc-proximity-nabu-sar-fallback.patch"
+      ],
+      "integration": [
+        "packages/iio-sensor-proxy/discovery.patch",
+        "packages/iio-sensor-proxy/proximity.patch"
+      ],
+      "overlap_policy": "Kumar discovery patch replaces Pocketblue no-exit patch for SSC; do not stack both",
+      "status": "3.9-7 candidate detaches pending SAR discovery during teardown; AArch64 compile passed; physical near/far and resume remain unqualified"
+    },
+    {
+      "name": "audio",
+      "pocketblue_recipe": "sm8150/alsa-ucm-conf-sm8150/alsa-ucm-conf-sm8150.spec",
+      "selected_package": "alsa-ucm-conf-xiaomi-nabu",
+      "kumar_deltas": [
+        "capture channel metadata",
+        "speaker/microphone gain differences",
+        "PipeWire protected-speaker filter"
+      ],
+      "status": "retain tested Kumar package; do not overwrite with baseline UCM or PulseAudio configuration"
+    },
+    {
+      "name": "fastrpc",
+      "pocketblue_recipe": "common/hexagonrpc/hexagonrpc.spec",
+      "selected_package": "hexagonrpcd",
+      "kumar_deltas": [
+        "Nabu SDSP attach parameters",
+        "firmware registry path",
+        "suspend/resume units"
+      ],
+      "status": "retain 0.4.0 baseline; Pocketblue 0.5.0 interface/service changes need separate review"
+    },
+    {
+      "name": "firmware",
+      "pocketblue_recipe": "sm8150/xiaomi-nabu-firmware/xiaomi-nabu-firmware.spec",
+      "selected_package": "linux-firmware-xiaomi-nabu",
+      "status": "local builds only; Pocketblue declares Unknown license; compare exact files/hashes before substitution"
+    },
+    {
+      "name": "kernel-and-dtb",
+      "pocketblue_recipe": "sm8150/linux-sm8150-6.17/linux-sm8150.spec",
+      "selected_source": "kernel/sources.json",
+      "status": "default to tested compiled 7.3.4 with reviewed Nabu resolutions, matching DTB/modules and stock 7.3.3 fallback; no 6.17 downgrade or unreviewed patch replay"
+    },
+    {
+      "name": "wifi-identity",
+      "pocketblue_recipe": "common/bootmac/bootmac.spec",
+      "selected_integration": "scripts/omarchy-nabu-wifi-identity",
+      "status": "retain tested hardware-identity fallback; do not enable two MAC writers"
+    },
+    {
+      "name": "camera",
+      "selected_files": [
+        "usr/share/libcamera/ipa/simple/ov13b10.yaml",
+        "usr/share/libcamera/ipa/simple/ov8856.yaml"
+      ],
+      "selected_package": "camera-studio",
+      "status": "retain Kumar image tuning with current kernel; camera reopen/reset failure remains HW-03"
+    },
+    {
+      "name": "tablet-utilities",
+      "selected_packages": [
+        "nabu-autobrightness",
+        "sddm-nabu"
+      ],
+      "selected_integrations": [
+        "scripts/omarchy-nabu-autorotate",
+        "scripts/omarchy-nabu-shell-compat",
+        "scripts/omarchy-nabu-keyboard"
+      ],
+      "status": "retain ALS, touch/rotation, OSK and autologin fixes independently of the desktop package source"
+    }
+  ],
+  "shutdown_integration": {
+    "reference": "pocketblue-packages/common/ath10k-shutdown",
+    "selected_unit": "overlay/etc/systemd/system/omarchy-nabu-wifi-shutdown.service",
+    "status": "early bus-driver removal passed four native reboots and an unplugged poweroff; final unit and offline R5 image verified; final-stack resume and fresh-image hardware qualification remain HW-14"
+  },
+  "deferred": [
+    "hexagonrpc 0.5.0 migration",
+    "Iris hardware decoding HW-08",
+    "kernel patch equivalence and repeated suspend qualification"
+  ],
+  "excluded": [
+    "Fedora RPM/bootc image machinery",
+    "Pocketblue partition flashing and qbootctl slot changes",
+    "Apple-specific components",
+    "nabu-kclean",
+    "Nabu browser overrides"
+  ]
+}

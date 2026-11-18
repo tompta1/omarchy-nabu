@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/Kumar-Jy/linux.git",
+  "branch": "nabu/7.3.y",
+  "commit": "72ec20d0e5c3566790ec809749a4ce642439d37c",
+  "defconfig": "nabu_defconfig",
+  "kernel_version": "7.3.3",
+  "source_directory": "upstream/linux-nabu",
+  "build": {
+    "output": "out/kernel-7.3.3-local",
+    "work_volume": "omarchy-nabu-kernel-7.3.3-local-work"
+  }
+}

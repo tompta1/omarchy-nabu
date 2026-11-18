@@ -1,0 +1,12 @@
+[Unit]
+Description=Nabu accelerometer display and touchscreen rotation
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/omarchy-nabu-autorotate
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

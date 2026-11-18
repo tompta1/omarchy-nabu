@@ -1,0 +1,45 @@
+{
+  "repository": "https://github.com/Kumar-Jy/linux.git",
+  "branch": "nabu/7.3.y",
+  "commit": "72ec20d0e5c3566790ec809749a4ce642439d37c",
+  "defconfig": "nabu_defconfig",
+  "kernel_version": "7.3.4",
+  "source_directory": "upstream/linux-nabu-candidate-7.3.4",
+  "prepared_tree": "c6aaa57c387f9cf1dfaeaf1262947675e6b072ad",
+  "stable_patch": {
+    "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/incr/patch-7.3.3-4.xz",
+    "sha256": "28df51493ae01b36c575a1aa257ac4a6896054af772d180fbf73a98e6190dbc6",
+    "exclude": [
+      "drivers/media/i2c/ov8856.c",
+      "drivers/media/platform/qcom/camss/camss-vfe-17x.c",
+      "drivers/media/platform/qcom/camss/camss.c",
+      "drivers/media/platform/qcom/iris/iris_core.h",
+      "drivers/media/platform/qcom/iris/iris_vpu_common.c",
+      "drivers/misc/fastrpc.c",
+      "drivers/power/supply/qcom_smbx.c",
+      "sound/soc/qcom/qdsp6/q6asm-dai.c"
+    ]
+  },
+  "resolution_patch": {
+    "path": "kernel/patches/nabu-7.3.4-resolutions.patch",
+    "sha256": "8bb56e3bc861f4a5848770cddda4df712f77c8fe26d015fe7592f39d092abc0a"
+  },
+  "review": {
+    "ov8856": "Apply upstream power/metadata changes; keep explicit Nabu xvclk acquisition/rate setup.",
+    "camss-vfe-17x": "IRQ buffer-done gate fix already present. Retain Nabu one-to-one WM allocation and output path; upstream vfe_get_output_v2 implementation is absent in this fork.",
+    "camss-resources": "Upstream changes SA8775P resources that are absent from this Nabu CAMSS fork; no resource block imported.",
+    "iris": "Add IOVA state alongside Nabu LLCC state, fix clock/domain power-off order, and retain legacy-VPU5 guard before bridge reset writes.",
+    "fastrpc": "Apply reserved-heap lifetime and error-cleanup fixes while retaining physical-address reporting and Nabu SNS/PDR attach helpers.",
+    "charger": "qcom_smbx.c is absent; Nabu retains its own SMB5/BMS driver. No new charging calibration or driver replacement.",
+    "q6asm": "Upstream fixes period-index wrap/underflow; Nabu already wraps a byte IRQ position and converts to frames. Retain that implementation."
+  },
+  "promotion": "Experimental HW-08 diagnostic profile; one-shot desktop/input and suspend tracing tested. Not a production fix; debug2 remains the default.",
+  "build": {
+    "output": "out/kernel-7.3.4-iris-diagnostics",
+    "work_volume": "omarchy-nabu-kernel-7.3.4-iris-work"
+  },
+  "debug_fragment": {
+    "path": "kernel/debug-iris.config",
+    "sha256": "5866d7e324d10be6d36423eb736b5bec5cf0d2fe849d6eaaac88fe99b3a464f9"
+  }
+}

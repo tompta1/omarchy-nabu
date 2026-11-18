@@ -1,0 +1,19 @@
+# HW-14: two native reboot tests passed with this teardown ordering.
+# Pocketblue reference: common/ath10k-shutdown, pinned in sources.json.
+# Original integration: arm without loading modules; remove only Nabu's bus
+# driver before DSP/network services stop. Do not order after graphical.target:
+# that conflicts with the target ordering when enabled beneath it.
+[Unit]
+Description=Unload Nabu Wi-Fi before DSP and network teardown
+After=NetworkManager.service hexagonrpcd.service
+ConditionPathExists=/sys/module/ath10k_snoc
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/true
+ExecStop=/usr/bin/modprobe -r ath10k_snoc
+TimeoutStopSec=45s
+
+[Install]
+WantedBy=graphical.target

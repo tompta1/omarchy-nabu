@@ -1,0 +1,26 @@
+Subject: [HW-08 candidate] Iris: release OPP votes for a zero rate request
+
+Do not turn a power-off request into the minimum enabled operating point.
+Use the existing NULL-OPP release API, retaining ceil lookup for nonzero
+rates and propagating both release and lookup errors.
+
+diff --git a/drivers/media/platform/qcom/iris/iris_resources.c b/drivers/media/platform/qcom/iris/iris_resources.c
+index 2c4d34c7bd77d1f78d3572f659da656eb3b12113..91216a44c7b95a50710ead7f8b51ff34855ee93c 100644
+--- a/drivers/media/platform/qcom/iris/iris_resources.c
++++ b/drivers/media/platform/qcom/iris/iris_resources.c
+@@ -61,9 +61,13 @@ int iris_unset_icc_bw(struct iris_core *core)
+ 
+ int iris_opp_set_rate(struct device *dev, unsigned long freq)
+ {
+-	struct dev_pm_opp *opp __free(put_opp) =
+-		devfreq_recommended_opp(dev, &freq, 0);
++	struct dev_pm_opp *opp __free(put_opp) = NULL;
+ 
++	/* A zero request releases votes; a ceil lookup would select min OPP. */
++	if (!freq)
++		return dev_pm_opp_set_opp(dev, NULL);
++
++	opp = devfreq_recommended_opp(dev, &freq, 0);
+ 	if (IS_ERR(opp))
+ 		return PTR_ERR(opp);
+ 

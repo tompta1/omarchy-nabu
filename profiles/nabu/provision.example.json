@@ -1,0 +1,6 @@
+{
+  "username": "nabu",
+  "password_hash_file": "local/login-password.hash",
+  "authorized_keys_file": null,
+  "autologin": false
+}

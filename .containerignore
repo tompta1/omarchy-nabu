@@ -1,0 +1,15 @@
+upstream
+out
+local
+.git
+.agents
+.codex
+.aws
+.env
+.env.*
+!.env.example
+**/ssh_host_*_key*
+**/id_rsa*
+**/id_ed25519*
+**/id_ecdsa*
+**/__pycache__

@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MIT
+# Omarchy Nabu: Pocketblue's libssc 0.4.4 baseline plus Kumar-Jy lifetime fixes.
+pkgname=libssc
+pkgver=0.4.4
+pkgrel=3
+pkgdesc='Qualcomm Sensor Core library with Nabu report-handler lifetime fixes'
+arch=('aarch64')
+url='https://codeberg.org/DylanVanAssche/libssc'
+license=('GPL-3.0-or-later')
+depends=('glib2' 'libqmi' 'protobuf-c' 'python-protobuf')
+makedepends=('meson' 'ninja' 'protobuf' 'python' 'gobject-introspection')
+# Debian's original source is byte-identical to the pinned upstream archive.
+source=("libssc-$pkgver.tar.gz::https://deb.debian.org/debian/pool/main/libs/libssc/libssc_${pkgver}.orig.tar.gz"
+        'lifecycle.patch')
+sha256sums=('716d6bd6b34d2d753060c6b54c9a87e34fae75b724c763bf9ef487efa3621587'
+            '4d8735d6100c851b02f798433d8965a54635ef3b5ab5b2a3bad49dcc943d3186')
+
+prepare() {
+  cd "$srcdir/libssc"
+  patch --fuzz=0 -Np1 -i "$srcdir/lifecycle.patch"
+}
+
+build() {
+  arch-meson "$srcdir/libssc" build
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+  install -Dm644 "$srcdir/libssc/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

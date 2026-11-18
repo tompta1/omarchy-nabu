@@ -1,0 +1,144 @@
+#!/usr/bin/python3
+"""Follow SensorProxy orientation and rotate Nabu's display and touch together."""
+import json
+import subprocess
+from pathlib import Path
+import os
+import time
+
+NAME = 'net.hadess.SensorProxy'
+OUTPUT = 'DSI-1'
+TRANSFORMS = {'normal': 0, 'left-up': 1, 'bottom-up': 2, 'right-up': 3}
+proxy = None
+claimed = False
+pending = None
+last = None
+timer = 0
+
+
+def rotation_enabled():
+    path = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home()/'.config')))/'omarchy-nabu/tablet-controls.json'
+    try:
+        return json.loads(path.read_text()).get('auto_rotate', True) is True
+    except FileNotFoundError:
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def release():
+    global claimed, pending, last, timer
+    if timer:
+        GLib.source_remove(timer)
+        timer = 0
+    if claimed:
+        try:
+            proxy.call_sync('ReleaseAccelerometer', None, Gio.DBusCallFlags.NONE, 3000, None)
+        except GLib.Error:
+            pass
+        claimed = False
+    pending = None
+    last = None
+
+
+def hypr(*args):
+    result = subprocess.run(['hyprctl', *args], capture_output=True, text=True,
+                            check=True, timeout=5)
+    return result.stdout
+
+
+def rotate():
+    global timer, last
+    timer = 0
+    if not rotation_enabled():
+        return False
+    try:
+        monitor = next(m for m in json.loads(hypr('monitors', '-j'))
+                       if m['name'] == OUTPUT)
+        if not monitor.get('dpmsStatus', True):
+            return False
+        transform = TRANSFORMS[pending]
+        # hl.monitor merges omitted fields with the existing output rule.
+        # Resubmitting an inferred mode/scale can turn a rotation into a hard
+        # modeset (e.g. preferred -> explicit mode), blanking the DSI panel.
+        # Keep all timing, layout, colour and scale choices exactly as configured.
+        display = (f'hl.monitor({{ output = "{OUTPUT}", transform = {transform} }}); '
+                   if monitor.get('transform') != transform else '')
+        expression = (display + 'hl.config({ input = { touchdevice = { '
+                      f'output = "{OUTPUT}", transform = {transform}'
+                      ' } } })')
+        started = time.monotonic()
+        response = hypr('eval', expression)
+        if response.strip() != 'ok':
+            raise RuntimeError(response.strip())
+        last = pending
+        elapsed = (time.monotonic() - started) * 1000
+        print(f'Orientation {pending}: display and touch transform {transform} '
+              f'(request {elapsed:.0f} ms)', flush=True)
+    except (subprocess.SubprocessError, ValueError, StopIteration, RuntimeError) as error:
+        print(f'Rotation failed: {error}', flush=True)
+    return False
+
+
+def tick():
+    global claimed, pending, timer
+    try:
+        if not rotation_enabled():
+            release()
+            return True
+        if not proxy.get_name_owner():
+            claimed = False
+            return True
+        if not claimed:
+            proxy.call_sync('ClaimAccelerometer', None,
+                            Gio.DBusCallFlags.NONE, 15000, None)
+            claimed = True
+            print('Accelerometer claimed', flush=True)
+        value = proxy.get_cached_property('AccelerometerOrientation')
+        orientation = value.unpack() if value else 'undefined'
+        if orientation not in TRANSFORMS:
+            if timer:
+                GLib.source_remove(timer)
+                timer = 0
+            pending = None
+        elif orientation != pending:
+            pending = orientation
+            if timer:
+                GLib.source_remove(timer)
+            timer = GLib.timeout_add(600, rotate)
+        elif orientation in TRANSFORMS and orientation != last and not timer:
+            timer = GLib.timeout_add(600, rotate)
+    except GLib.Error as error:
+        print(f'Sensor unavailable: {error.message}', flush=True)
+        claimed = False
+    return True
+
+
+def owner_changed(*_):
+    global claimed
+    claimed = False
+
+
+def main():
+    global proxy, Gio, GLib
+    import gi
+    gi.require_version('Gio', '2.0')
+    from gi.repository import Gio, GLib
+
+    proxy = Gio.DBusProxy.new_for_bus_sync(
+        Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None,
+        NAME, '/net/hadess/SensorProxy', NAME, None)
+    proxy.set_default_timeout(15000)
+    proxy.connect('notify::g-name-owner', owner_changed)
+    # Events avoid the polling delay. Poll for preferences and sensor recovery.
+    proxy.connect('g-properties-changed', lambda *_: tick())
+    GLib.timeout_add_seconds(2, tick)
+    tick()
+    try:
+        GLib.MainLoop().run()
+    finally:
+        release()
+
+
+if __name__ == '__main__':
+    main()

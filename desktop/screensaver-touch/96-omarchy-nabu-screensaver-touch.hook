@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = omarchy
+
+[Action]
+Description = Applying selected Nabu decorative screensaver touch dismissal
+When = PostTransaction
+Exec = /usr/local/libexec/omarchy-nabu-screensaver-touch

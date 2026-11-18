@@ -1,0 +1,30 @@
+#!/bin/bash
+set -euo pipefail
+gadget=/sys/kernel/config/usb_gadget/omarchy-nabu
+if [[ -r $gadget/UDC && -n $(cat "$gadget/UDC") ]]; then exit 0; fi
+mkdir -p "$gadget"
+cd "$gadget"
+printf '0x1d6b\n' > idVendor
+printf '0x0104\n' > idProduct
+mkdir -p strings/0x409
+printf 'omarchy-nabu\n' > strings/0x409/serialnumber
+printf 'Omarchy\n' > strings/0x409/manufacturer
+printf 'Omarchy Nabu\n' > strings/0x409/product
+mkdir -p configs/c.1/strings/0x409 functions/acm.usb0 functions/ecm.usb0
+printf 'USB network and serial\n' > configs/c.1/strings/0x409/configuration
+printf '02:00:00:42:01:01\n' > functions/ecm.usb0/dev_addr
+printf '02:00:00:42:01:02\n' > functions/ecm.usb0/host_addr
+[[ ! -e functions/ecm.usb0/ifname ]] || printf '%s\n' 'usb%d' > functions/ecm.usb0/ifname
+[[ -L configs/c.1/acm.usb0 ]] || ln -s "$gadget/functions/acm.usb0" configs/c.1/acm.usb0
+[[ -L configs/c.1/ecm.usb0 ]] || ln -s "$gadget/functions/ecm.usb0" configs/c.1/ecm.usb0
+for ((attempt=0; attempt<30; attempt++)); do
+  for udc in /sys/class/udc/*; do
+    if [[ -e $udc ]]; then
+      printf '%s\n' "${udc##*/}" > UDC
+      exit 0
+    fi
+  done
+  sleep 1
+done
+echo 'No USB device controller became available' >&2
+exit 1

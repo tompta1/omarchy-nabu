@@ -1,0 +1,1 @@
+console=tty0 loglevel=4 drm.debug=0x00 systemd.show_status=auto

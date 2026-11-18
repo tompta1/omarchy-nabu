@@ -1,0 +1,54 @@
+#!/bin/bash
+# Adopt the checked initial UKI into upstream Limine/Snapper on first boot.
+set -euo pipefail
+[[ $EUID == 0 ]]
+[[ $(findmnt -n -o FSTYPE --mountpoint /) == btrfs ]]
+[[ $(findmnt -n -o FSROOT --mountpoint /) == /@ ]]
+[[ $(findmnt -n -o FSTYPE --mountpoint /boot) == vfat ]]
+mountpoint -q /efi
+read -r machine_id < /etc/machine-id
+[[ $machine_id =~ ^[0-9a-f]{32}$ && $machine_id != 00000000000000000000000000000000 ]]
+mkdir -p /var/lib/omarchy-nabu /run/lock
+exec 9>/run/lock/omarchy-nabu-snapshot-init.lock
+flock -n 9
+[[ ! -e /var/lib/omarchy-nabu/snapshot-ready ]] || exit 0
+read -r package release < <(python3 - <<'PY'
+import json,re
+from pathlib import Path
+value=json.loads(Path('/etc/omarchy-nabu/kernel.json').read_text())
+assert re.fullmatch(r'linux-nabu-(local|debug|debug-next|debug-pm)',value['package'])
+assert re.fullmatch(r'[A-Za-z0-9._+-]+',value['release'])
+print(value['package'],value['release'])
+PY
+)
+[[ -s /usr/lib/modules/$release/vmlinuz && -s /usr/lib/modules/$release/nabu.dtb ]]
+[[ -s /boot/EFI/Linux/omarchy.efi ]]
+if [[ ! -f /etc/snapper/configs/root ]]; then
+  snapper --no-dbus -c root create-config /
+elif ! btrfs subvolume show /.snapshots >/dev/null 2>&1; then
+  # Refuse nonempty/foreign snapshot directories rather than removing their data.
+  if [[ -e /.snapshots ]]; then rmdir /.snapshots; fi
+  btrfs subvolume create /.snapshots
+fi
+install -m644 /usr/share/omarchy/default/snapper/root /etc/snapper/configs/root
+mkdir -p /etc/conf.d
+printf '%s\n' 'SNAPPER_CONFIGS="root"' > /etc/conf.d/snapper
+backup=$(mktemp /boot/.limine-before-init.XXXXXX)
+cp /boot/limine.conf "$backup"
+success=0
+finish() {
+  if (( success == 0 )); then mv -f "$backup" /boot/limine.conf; else rm -f "$backup"; fi
+}
+trap finish EXIT
+# Import the already checked UKI; do not rebuild Linux or touch firmware/ESP.
+# Keep the static boot payload throughout initialization and on any failed retry.
+limine-entry-tool --add-uki "$package" /boot/EFI/Linux/omarchy.efi \
+  --comment "Kernel version: $release" --no-hooks
+cmp /boot/EFI/Linux/omarchy.efi "/boot/EFI/Linux/omarchy_${package}.efi"
+grep -Fxq "default_entry: Omarchy Nabu/${package}" /boot/limine.conf
+grep -Fq "omarchy_${package}.efi" /boot/limine.conf
+limine-snapper-sync
+grep -Fxq "default_entry: Omarchy Nabu/${package}" /boot/limine.conf
+sync -f /boot/limine.conf
+printf '%s\n' "$machine_id" > /var/lib/omarchy-nabu/snapshot-ready
+success=1

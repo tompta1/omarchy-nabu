@@ -1,0 +1,32 @@
+{
+  "assessment_date": "2026-11-13",
+  "pocketblue": {
+    "repository": "https://github.com/pocketblue/pocketblue",
+    "commit": "b2c155ba4b543089a70757bc3536d6f95ac4e0bf"
+  },
+  "pocketblue_packages": {
+    "repository": "https://github.com/pocketblue/packages",
+    "commit": "703d672e12a20c9c51b01be9d8e9b81f6110d082"
+  },
+  "uboot_candidate": {
+    "repository": "https://github.com/gmankab/u-boot",
+    "commit": "22a9b9a0a272299c426e4f597d2e8ec1d3336a2a",
+    "inspected_development_commit": "cc9d4f8ea5e2028433ce7cd0385ebd1f57b1a5d6",
+    "pocketblue_release": "2026-10-23",
+    "pocketblue_image_sha256": "a6ffdee0abebc649bc82a6c66797fe42c798a3c65f6764010c744f1ab4e27056",
+    "source_upstream_version": "2026.07"
+  },
+  "aloha_source_candidate": {
+    "repository": "https://github.com/Project-Aloha/mu_aloha_platforms",
+    "commit": "cf5dcae4d15ee9e01faae69e03a2a279bf97e832"
+  },
+  "pocketblue_aloha_reference": {
+    "url": "https://github.com/Project-Aloha/mu_aloha_platforms/releases/download/2412.74/uefi-images-hana-sm8150.zip",
+    "sha256": "7ddc39aac2c92cf3ce341256baad34f34e50cc99af7cca55dd3b27971d724024",
+    "member": "xiaomi-nabu/xiaomi-nabu_NOSB.img"
+  },
+  "nabu_packages": {
+    "repository": "https://github.com/Kumar-Jy/nabu-pkgs",
+    "commit": "a536d44db99de61b4ed7ffdead051a6fff7e5e48"
+  }
+}
